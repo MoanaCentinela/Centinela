@@ -48,18 +48,47 @@ Por eso se dimensiona la subred de aplicación en `/24` (251 IPs utilizables), m
 
 ## 4. Reglas de tráfico (deny-by-default)
 
-Regla general: **todo el tráfico se deniega por defecto**; solo se permite explícitamente lo que una operación concreta del sistema requiere. No existe ninguna regla que permita tráfico desde cualquier origen (`0.0.0.0/0` / `*` / `Internet` como origen amplio).
+Regla general: **todo el tráfico se deniega por defecto**; solo se permite explícitamente lo que una operación concreta del sistema requiere. Para lograr esto de manera efectiva, se asocia un Grupo de Seguridad de Red (NSG) a cada una de las subredes operativas.
 
-| # | Origen | Destino | Puerto | Protocolo | Justificación operativa |
-|---|---|---|---|---|---|
-| 1 | Internet | `centinela-snet-app-dev` (App Service) | 443 | TCP/HTTPS | Permite que la API de ingesta reciba transacciones de los clientes/comercios. Único punto de entrada público del sistema. |
-| 2 | `centinela-snet-app-dev` | `centinela-snet-data-dev` | 443 | TCP/HTTPS | La API necesita persistir la transacción cruda en Cosmos DB / Storage (semana 2). |
-| 3 | `centinela-snet-app-dev` | Storage Queue (endpoint de servicio) | 443 | TCP/HTTPS | La API publica en la cola de ingesta para absorber ráfagas. |
-| 4 | `centinela-snet-app-dev` | Storage Account — Blob (endpoint de servicio) | 443 | TCP/HTTPS | Carga de documentos de verificación de identidad por parte de los analistas, vía la API. |
-| 5 | Cualquier origen | `centinela-snet-data-dev` | * | * | **DENEGADO explícitamente.** Ningún origen distinto a la subred de aplicación puede alcanzar la capa de datos. Esta es la regla que se demuestra en la prueba de aislamiento. |
-| 6 | Internet | `centinela-snet-data-dev` | * | * | **DENEGADO explícitamente.** Redundante con la regla 5, pero se deja explícita porque es el requerimiento no negociable del brief. |
+### 4.1 NSG de la Subred de Aplicación (`centinela-nsg-app-dev`)
 
-> Las reglas 5 y 6 no son "ausencia de regla" — se documentan como reglas de denegación explícita dentro del NSG, para que quede evidencia de la decisión y no de un olvido.
+Este NSG protege la subred donde reside la API de ingesta (App Service).
+
+#### Reglas de Entrada (Inbound Security Rules)
+
+| Prioridad | Nombre de Regla | Origen | Puerto Origen | Destino | Puerto Destino | Protocolo | Acción | Justificación Operativa |
+|---|---|---|---|---|---|---|---|---|
+| 100 | `Allow-HTTPS-Inbound` | `Internet` | `*` | `VirtualNetwork` | `443` | `TCP` | **Allow** | Permite que la API de ingesta reciba transacciones de los clientes y comercios. Único punto de entrada público del sistema. |
+| 65500 | `Deny-All-Inbound` | `*` | `*` | `*` | `*` | `*` | **Deny** | Denegación explícita por defecto para cualquier otro tráfico entrante. |
+
+#### Reglas de Salida (Outbound Security Rules)
+
+| Prioridad | Nombre de Regla | Origen | Puerto Origen | Destino | Puerto Destino | Protocolo | Acción | Justificación Operativa |
+|---|---|---|---|---|---|---|---|---|
+| 100 | `Allow-AAD-Outbound` | `*` | `*` | `AzureActiveDirectory` (Service Tag) | `443` | `TCP` | **Allow** | Requerido para que la API obtenga tokens de Microsoft Entra ID para la Managed Identity. |
+| 110 | `Allow-Storage-Outbound` | `*` | `*` | `Storage` (Service Tag) | `443` | `TCP` | **Allow** | Permite que la API acceda a las colas y blobs del Storage Account. |
+| 120 | `Allow-CosmosDB-Outbound` | `*` | `*` | `AzureCosmosDB` (Service Tag) | `443`, `10250-10255` | `TCP` | **Allow** | Requerido para conectarse de manera segura a la base de datos documental (semana 2). |
+| 130 | `Allow-Monitor-Outbound` | `*` | `*` | `AzureMonitor` (Service Tag) | `443` | `TCP` | **Allow** | Permite enviar telemetría y logs a Application Insights / Log Analytics. |
+| 65500 | `Deny-All-Outbound` | `*` | `*` | `*` | `*` | `*` | **Deny** | Denegación explícita por defecto. Bloquea cualquier otra conexión saliente no aprobada (evita exfiltración de datos). |
+
+---
+
+### 4.2 NSG de la Subred de Datos (`centinela-nsg-data-dev`)
+
+Este NSG aísla por completo la capa de datos (Storage Account, Cosmos DB) de accesos no autorizados.
+
+#### Reglas de Entrada (Inbound Security Rules)
+
+| Prioridad | Nombre de Regla | Origen | Puerto Origen | Destino | Puerto Destino | Protocolo | Acción | Justificación Operativa |
+|---|---|---|---|---|---|---|---|---|
+| 100 | `Allow-App-Subnet-Inbound` | `10.0.1.0/24` (Subred App) | `*` | `10.0.2.0/24` (Subred Datos) | `443`, `10250-10255` | `TCP` | **Allow** | Permite que únicamente la API de ingesta pueda realizar consultas y escrituras en Cosmos DB y Storage. |
+| 65500 | `Deny-All-Inbound` | `*` | `*` | `*` | `*` | `*` | **Deny** | **DENEGADO explícitamente.** Ningún origen distinto a la subred de aplicación puede alcanzar la capa de datos (incluyendo Internet). Cumple con el requerimiento no negociable del brief. |
+
+#### Reglas de Salida (Outbound Security Rules)
+
+| Prioridad | Nombre de Regla | Origen | Puerto Origen | Destino | Puerto Destino | Protocolo | Acción | Justificación Operativa |
+|---|---|---|---|---|---|---|---|---|
+| 65500 | `Deny-All-Outbound` | `*` | `*` | `*` | `*` | `*` | **Deny** | Los recursos en la subred de datos nunca inician tráfico saliente; solo responden a peticiones entrantes autorizadas. |
 
 ---
 
