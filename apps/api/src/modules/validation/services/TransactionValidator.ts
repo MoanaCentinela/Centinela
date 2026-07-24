@@ -8,7 +8,7 @@ export class TransactionValidator {
     const result = TransactionSchema.safeParse(transaction);
 
     if (!result.success) {
-      return result.error.issues.map((issue) => issue.message);
+      return result.error.issues.map((issue: { message: string }) => issue.message);
     }
 
     const errors: string[] = [];
