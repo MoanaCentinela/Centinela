@@ -7,7 +7,7 @@
 ## 1. Requisitos previos
 
 - [ ] Cuenta de Azure con una suscripción activa (ver sección 2 sobre límite de gasto)
-- [ ] [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) instalado (versión mínima: `<completar>`)
+- [x] [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) instalado (versión mínima: `2.60.0`)
 - [ ] Sesión iniciada: `az login`
 - [ ] Suscripción correcta seleccionada: `az account set --subscription "<nombre-o-id-suscripción>"`
 - [ ] Permisos de **Administrador** (rol definido en la matriz RBAC) sobre la suscripción, para poder ejecutar el script de aprovisionamiento
@@ -188,6 +188,6 @@ Antes de dar la semana por concluida, el equipo ejecuta en orden (sección 4 del
 ## 9. Pendiente de completar (a medida que Dani/Maribel avancen)
 
 - [ ] Nombre real del Resource Group, App Service, Storage Account (una vez el script defina el sufijo único)
-- [ ] Versión mínima de Azure CLI requerida
-- [ ] Contenido real de `infra/README.md` con notas de idempotencia
+- [x] Versión mínima de Azure CLI requerida (`2.60.0`)
+- [x] Contenido real de `infra/README.md` con notas de idempotencia
 - [ ] Ejemplo de payload de transacción alineado al contrato final (Vale/Maribel)

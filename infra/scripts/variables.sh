@@ -18,9 +18,11 @@ VNET_ADDRESS="10.0.0.0/16"
 
 APP_SUBNET="centinela-snet-app-dev"
 APP_SUBNET_ADDRESS="10.0.1.0/24"
+APP_NSG="centinela-nsg-app-dev"
 
 DATA_SUBNET="centinela-snet-data-dev"
 DATA_SUBNET_ADDRESS="10.0.2.0/24"
+DATA_NSG="centinela-nsg-data-dev"
 
 FUTURE_SUBNET="centinela-snet-future-dev"
 FUTURE_SUBNET_ADDRESS="10.0.3.0/24"
@@ -44,3 +46,10 @@ STORAGE_ACCOUNT="stcentinela2607"
 BLOB_CONTAINER="raw-data"
 
 QUEUE_NAME="cola-transacciones"
+
+####################################################
+# MONITOREO
+####################################################
+
+LOG_WORKSPACE="centinela-log-dev"
+APP_INSIGHTS="centinela-appi-dev"
