@@ -1,4 +1,4 @@
-import { FastifyInstance } from "fastify";
+import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { TransactionRequest } from "../../../shared/contracts/index.js";
 import { ApiResponse } from "../../../responses/index.js";
 import { TransactionService } from "../services/TransactionService.js";
@@ -6,7 +6,7 @@ import { TransactionService } from "../services/TransactionService.js";
 export async function transactionRoutes(app: FastifyInstance) {
   const transactionService = new TransactionService();
 
-  app.post("/transactions", async (request, reply) => {
+  app.post("/transactions", async (request: FastifyRequest, reply: FastifyReply) => {
     const transaction = request.body as TransactionRequest;
 
     const result = await transactionService.processTransaction(transaction);
