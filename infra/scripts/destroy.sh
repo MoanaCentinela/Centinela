@@ -1,8 +1,19 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
 
-source ./infra/scripts/variables.sh
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+source "$SCRIPT_DIR/variables.sh"
+
+require_command() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        echo "ERROR: Falta la dependencia '$1'."
+        exit 1
+    fi
+}
+
+require_command az
 
 echo "========================================"
 echo "ELIMINAR INFRAESTRUCTURA"
@@ -16,7 +27,7 @@ if [ "$confirm" != "y" ]; then
 fi
 
 az group delete \
-    --name $RESOURCE_GROUP \
+    --name "$RESOURCE_GROUP" \
     --yes \
     --no-wait
 
