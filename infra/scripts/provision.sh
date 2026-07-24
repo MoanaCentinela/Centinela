@@ -1,16 +1,33 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
 
 # Configura Azure CLI para que instale automáticamente cualquier extensión requerida
 # (por ejemplo, para Application Insights) sin interrumpir la ejecución con preguntas interactivas.
 az config set extension.use_dynamic_install=yes_without_prompt >/dev/null
 
-source ./infra/scripts/variables.sh
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+source "$SCRIPT_DIR/variables.sh"
+
+require_command() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        echo "ERROR: Falta la dependencia '$1'."
+        exit 1
+    fi
+}
+
+require_command az
 
 echo "========================================"
 echo "CENTINELA - PROVISIONAMIENTO"
 echo "========================================"
+
+echo ""
+echo "Usando recursos con:"
+echo "  Resource Group: $RESOURCE_GROUP"
+echo "  Ubicación: $LOCATION"
 
 ############################################################
 # RESOURCE GROUP
@@ -19,17 +36,14 @@ echo "========================================"
 echo ""
 echo "Verificando Resource Group..."
 
-if az group exists --name $RESOURCE_GROUP | grep true >/dev/null
+if az group exists --name "$RESOURCE_GROUP" | grep -q true
 then
     echo "✓ Resource Group ya existe."
 else
-
     echo "Creando Resource Group..."
-
     az group create \
-        --name $RESOURCE_GROUP \
-        --location $LOCATION
-
+        --name "$RESOURCE_GROUP" \
+        --location "$LOCATION"
 fi
 
 ############################################################
@@ -40,19 +54,16 @@ echo ""
 echo "Verificando VNet..."
 
 if az network vnet show \
-    --resource-group $RESOURCE_GROUP \
-    --name $VNET_NAME >/dev/null 2>&1
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$VNET_NAME" >/dev/null 2>&1
 then
     echo "✓ VNet ya existe."
 else
-
     echo "Creando VNet..."
-
     az network vnet create \
-        --resource-group $RESOURCE_GROUP \
-        --name $VNET_NAME \
-        --address-prefix $VNET_ADDRESS
-
+        --resource-group "$RESOURCE_GROUP" \
+        --name "$VNET_NAME" \
+        --address-prefix "$VNET_ADDRESS"
 fi
 
 ############################################################
@@ -63,23 +74,18 @@ echo ""
 echo "Verificando Subred App..."
 
 if az network vnet subnet show \
-    --resource-group $RESOURCE_GROUP \
-    --vnet-name $VNET_NAME \
-    --name $APP_SUBNET >/dev/null 2>&1
+    --resource-group "$RESOURCE_GROUP" \
+    --vnet-name "$VNET_NAME" \
+    --name "$APP_SUBNET" >/dev/null 2>&1
 then
-
     echo "✓ Subred App ya existe."
-
 else
-
     echo "Creando Subred App..."
-
     az network vnet subnet create \
-        --resource-group $RESOURCE_GROUP \
-        --vnet-name $VNET_NAME \
-        --name $APP_SUBNET \
-        --address-prefixes $APP_SUBNET_ADDRESS
-
+        --resource-group "$RESOURCE_GROUP" \
+        --vnet-name "$VNET_NAME" \
+        --name "$APP_SUBNET" \
+        --address-prefixes "$APP_SUBNET_ADDRESS"
 fi
 
 ############################################################
@@ -90,23 +96,18 @@ echo ""
 echo "Verificando Subred Data..."
 
 if az network vnet subnet show \
-    --resource-group $RESOURCE_GROUP \
-    --vnet-name $VNET_NAME \
-    --name $DATA_SUBNET >/dev/null 2>&1
+    --resource-group "$RESOURCE_GROUP" \
+    --vnet-name "$VNET_NAME" \
+    --name "$DATA_SUBNET" >/dev/null 2>&1
 then
-
     echo "✓ Subred Data ya existe."
-
 else
-
     echo "Creando Subred Data..."
-
     az network vnet subnet create \
-        --resource-group $RESOURCE_GROUP \
-        --vnet-name $VNET_NAME \
-        --name $DATA_SUBNET \
-        --address-prefixes $DATA_SUBNET_ADDRESS
-
+        --resource-group "$RESOURCE_GROUP" \
+        --vnet-name "$VNET_NAME" \
+        --name "$DATA_SUBNET" \
+        --address-prefixes "$DATA_SUBNET_ADDRESS"
 fi
 
 ############################################################
@@ -117,23 +118,18 @@ echo ""
 echo "Verificando Subred Future..."
 
 if az network vnet subnet show \
-    --resource-group $RESOURCE_GROUP \
-    --vnet-name $VNET_NAME \
-    --name $FUTURE_SUBNET >/dev/null 2>&1
+    --resource-group "$RESOURCE_GROUP" \
+    --vnet-name "$VNET_NAME" \
+    --name "$FUTURE_SUBNET" >/dev/null 2>&1
 then
-
     echo "✓ Subred Future ya existe."
-
 else
-
     echo "Creando Subred Future..."
-
     az network vnet subnet create \
-        --resource-group $RESOURCE_GROUP \
-        --vnet-name $VNET_NAME \
-        --name $FUTURE_SUBNET \
-        --address-prefixes $FUTURE_SUBNET_ADDRESS
-
+        --resource-group "$RESOURCE_GROUP" \
+        --vnet-name "$VNET_NAME" \
+        --name "$FUTURE_SUBNET" \
+        --address-prefixes "$FUTURE_SUBNET_ADDRESS"
 fi
 
 ############################################################
@@ -347,22 +343,17 @@ echo ""
 echo "Verificando Storage..."
 
 if az storage account show \
-    --resource-group $RESOURCE_GROUP \
-    --name $STORAGE_ACCOUNT >/dev/null 2>&1
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$STORAGE_ACCOUNT" >/dev/null 2>&1
 then
-
     echo "✓ Storage ya existe."
-
 else
-
     echo "Creando Storage..."
-
     az storage account create \
-        --name $STORAGE_ACCOUNT \
-        --resource-group $RESOURCE_GROUP \
-        --location $LOCATION \
+        --name "$STORAGE_ACCOUNT" \
+        --resource-group "$RESOURCE_GROUP" \
+        --location "$LOCATION" \
         --sku Standard_LRS
-
 fi
 
 ############################################################
@@ -373,8 +364,8 @@ echo ""
 echo "Obteniendo Connection String..."
 
 CONNECTION_STRING=$(az storage account show-connection-string \
-    --name $STORAGE_ACCOUNT \
-    --resource-group $RESOURCE_GROUP \
+    --name "$STORAGE_ACCOUNT" \
+    --resource-group "$RESOURCE_GROUP" \
     --query connectionString \
     -o tsv)
 
@@ -386,23 +377,18 @@ echo ""
 echo "Verificando Blob..."
 
 if az storage container exists \
-    --name $BLOB_CONTAINER \
+    --name "$BLOB_CONTAINER" \
     --connection-string "$CONNECTION_STRING" \
     --query exists \
-    -o tsv | grep true >/dev/null
+    -o tsv | grep -q true
 then
-
     echo "✓ Blob ya existe."
-
 else
-
     echo "Creando Blob..."
-
     az storage container create \
-        --name $BLOB_CONTAINER \
+        --name "$BLOB_CONTAINER" \
         --connection-string "$CONNECTION_STRING" \
         --public-access off
-
 fi
 
 ############################################################
@@ -413,22 +399,17 @@ echo ""
 echo "Verificando Queue..."
 
 if az storage queue exists \
-    --name $QUEUE_NAME \
+    --name "$QUEUE_NAME" \
     --connection-string "$CONNECTION_STRING" \
     --query exists \
-    -o tsv | grep true >/dev/null
+    -o tsv | grep -q true
 then
-
     echo "✓ Queue ya existe."
-
 else
-
     echo "Creando Queue..."
-
     az storage queue create \
-        --name $QUEUE_NAME \
+        --name "$QUEUE_NAME" \
         --connection-string "$CONNECTION_STRING"
-
 fi
 
 ############################################################
@@ -443,9 +424,9 @@ echo "Habilitando Service Endpoints en la Subred de Aplicación..."
 # que el tráfico hacia Azure Storage viaje seguro por el backbone de Azure
 # y pueda ser identificado por el firewall del Storage Account.
 az network vnet subnet update \
-    --resource-group $RESOURCE_GROUP \
-    --vnet-name $VNET_NAME \
-    --name $APP_SUBNET \
+    --resource-group "$RESOURCE_GROUP" \
+    --vnet-name "$VNET_NAME" \
+    --name "$APP_SUBNET" \
     --service-endpoints Microsoft.Storage >/dev/null
 
 echo "Configurando firewall del Storage Account..."
@@ -453,17 +434,17 @@ echo "Configurando firewall del Storage Account..."
 # Cambia la acción por defecto a 'Deny' para bloquear cualquier acceso
 # desde la red de Internet pública a nuestra Storage Account.
 az storage account update \
-    --name $STORAGE_ACCOUNT \
-    --resource-group $RESOURCE_GROUP \
+    --name "$STORAGE_ACCOUNT" \
+    --resource-group "$RESOURCE_GROUP" \
     --default-action Deny >/dev/null
 
 # Agrega la regla de red para autorizar el acceso exclusivamente
 # desde la subred de aplicación (donde se ejecuta la API de ingesta).
 az storage account network-rule add \
-    --resource-group $RESOURCE_GROUP \
-    --account-name $STORAGE_ACCOUNT \
-    --vnet-name $VNET_NAME \
-    --subnet $APP_SUBNET >/dev/null
+    --resource-group "$RESOURCE_GROUP" \
+    --account-name "$STORAGE_ACCOUNT" \
+    --vnet-name "$VNET_NAME" \
+    --subnet "$APP_SUBNET" >/dev/null
 
 ############################################################
 # APP SERVICE PLAN
@@ -473,23 +454,18 @@ echo ""
 echo "Verificando App Service Plan..."
 
 if az appservice plan show \
-    --resource-group $RESOURCE_GROUP \
-    --name $APP_SERVICE_PLAN >/dev/null 2>&1
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$APP_SERVICE_PLAN" >/dev/null 2>&1
 then
-
     echo "✓ App Service Plan ya existe."
-
 else
-
     echo "Creando App Service Plan..."
-
     az appservice plan create \
-        --name $APP_SERVICE_PLAN \
-        --resource-group $RESOURCE_GROUP \
-        --location $LOCATION \
+        --name "$APP_SERVICE_PLAN" \
+        --resource-group "$RESOURCE_GROUP" \
+        --location "$LOCATION" \
         --sku B1 \
         --is-linux
-
 fi
 
 ############################################################
@@ -500,22 +476,17 @@ echo ""
 echo "Verificando Web App..."
 
 if az webapp show \
-    --resource-group $RESOURCE_GROUP \
-    --name $APP_SERVICE_NAME >/dev/null 2>&1
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$APP_SERVICE_NAME" >/dev/null 2>&1
 then
-
     echo "✓ Web App ya existe."
-
 else
-
     echo "Creando Web App..."
-
     az webapp create \
-        --resource-group $RESOURCE_GROUP \
-        --plan $APP_SERVICE_PLAN \
-        --name $APP_SERVICE_NAME \
+        --resource-group "$RESOURCE_GROUP" \
+        --plan "$APP_SERVICE_PLAN" \
+        --name "$APP_SERVICE_NAME" \
         --runtime "$APP_RUNTIME"
-
 fi
 
 ############################################################
@@ -529,38 +500,38 @@ echo "Activando Managed Identity..."
 # Activa la identidad asignada por el sistema (System-Assigned Managed Identity) en el App Service.
 # Esto crea una identidad en Microsoft Entra ID para la Web App sin necesidad de contraseñas.
 az webapp identity assign \
-    --resource-group $RESOURCE_GROUP \
-    --name $APP_SERVICE_NAME >/dev/null
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$APP_SERVICE_NAME" >/dev/null
 
 echo "Asignando roles RBAC a la Managed Identity del App Service..."
 
 # Obtiene el identificador principal (ObjectId) de la identidad del App Service.
 PRINCIPAL_ID=$(az webapp identity show \
-    --resource-group $RESOURCE_GROUP \
-    --name $APP_SERVICE_NAME \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$APP_SERVICE_NAME" \
     --query principalId \
     -o tsv)
 
 # Obtiene el ID del recurso del Storage Account para limitar el ámbito de los permisos.
 STORAGE_ID=$(az storage account show \
-    --resource-group $RESOURCE_GROUP \
-    --name $STORAGE_ACCOUNT \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$STORAGE_ACCOUNT" \
     --query id \
     -o tsv)
 
 # Asigna el rol "Storage Blob Data Contributor" (permite lectura/escritura de blobs) a la API.
 # Se usa || true para hacer la operación idempotente si el rol ya está asignado.
 az role assignment create \
-    --assignee-object-id $PRINCIPAL_ID \
+    --assignee-object-id "$PRINCIPAL_ID" \
     --role "Storage Blob Data Contributor" \
-    --scope $STORAGE_ID \
+    --scope "$STORAGE_ID" \
     --assignee-principal-type ServicePrincipal >/dev/null 2>&1 || true
 
 # Asigna el rol "Storage Queue Data Message Sender" (permite enviar mensajes a la cola de ingesta) a la API.
 az role assignment create \
-    --assignee-object-id $PRINCIPAL_ID \
+    --assignee-object-id "$PRINCIPAL_ID" \
     --role "Storage Queue Data Message Sender" \
-    --scope $STORAGE_ID \
+    --scope "$STORAGE_ID" \
     --assignee-principal-type ServicePrincipal >/dev/null 2>&1 || true
 
 ############################################################
@@ -571,8 +542,8 @@ echo ""
 echo "Configurando HTTPS Only..."
 
 az webapp update \
-    --resource-group $RESOURCE_GROUP \
-    --name $APP_SERVICE_NAME \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$APP_SERVICE_NAME" \
     --https-only true >/dev/null
 
 ############################################################
@@ -583,26 +554,21 @@ echo ""
 echo "Verificando integración con la VNet..."
 
 VNET_STATUS=$(az webapp vnet-integration list \
-    --resource-group $RESOURCE_GROUP \
-    --name $APP_SERVICE_NAME \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$APP_SERVICE_NAME" \
     --query "[?name=='$APP_SUBNET'] | length(@)" \
     -o tsv)
 
 if [ "$VNET_STATUS" = "1" ]
 then
-
     echo "✓ La Web App ya está integrada."
-
 else
-
     echo "Integrando Web App con la VNet..."
-
     az webapp vnet-integration add \
-        --resource-group $RESOURCE_GROUP \
-        --name $APP_SERVICE_NAME \
-        --vnet $VNET_NAME \
-        --subnet $APP_SUBNET
-
+        --resource-group "$RESOURCE_GROUP" \
+        --name "$APP_SERVICE_NAME" \
+        --vnet "$VNET_NAME" \
+        --subnet "$APP_SUBNET"
 fi
 
 ############################################################
@@ -613,47 +579,47 @@ echo ""
 echo "Verificando Workspace de Log Analytics ($LOG_WORKSPACE)..."
 
 if az monitor log-analytics workspace show \
-    --resource-group $RESOURCE_GROUP \
-    --workspace-name $LOG_WORKSPACE >/dev/null 2>&1
+    --resource-group "$RESOURCE_GROUP" \
+    --workspace-name "$LOG_WORKSPACE" >/dev/null 2>&1
 then
     echo "✓ Log Analytics Workspace ya existe."
 else
     echo "Creando Workspace de Log Analytics..."
     az monitor log-analytics workspace create \
-        --resource-group $RESOURCE_GROUP \
-        --workspace-name $LOG_WORKSPACE \
-        --location $LOCATION >/dev/null
+        --resource-group "$RESOURCE_GROUP" \
+        --workspace-name "$LOG_WORKSPACE" \
+        --location "$LOCATION" >/dev/null
 fi
 
 echo ""
 echo "Verificando Application Insights ($APP_INSIGHTS)..."
 
 if az monitor app-insights component show \
-    --app $APP_INSIGHTS \
-    --resource-group $RESOURCE_GROUP >/dev/null 2>&1
+    --app "$APP_INSIGHTS" \
+    --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1
 then
     echo "✓ Application Insights ya existe."
 else
     echo "Creando Application Insights..."
     az monitor app-insights component create \
-        --app $APP_INSIGHTS \
-        --location $LOCATION \
-        --resource-group $RESOURCE_GROUP \
-        --workspace $LOG_WORKSPACE >/dev/null
+        --app "$APP_INSIGHTS" \
+        --location "$LOCATION" \
+        --resource-group "$RESOURCE_GROUP" \
+        --workspace "$LOG_WORKSPACE" >/dev/null
 fi
 
 echo ""
 echo "Configurando Application Insights en la Web App..."
 
 APP_INSIGHTS_KEY=$(az monitor app-insights component show \
-    --app $APP_INSIGHTS \
-    --resource-group $RESOURCE_GROUP \
+    --app "$APP_INSIGHTS" \
+    --resource-group "$RESOURCE_GROUP" \
     --query connectionString \
     -o tsv)
 
 az webapp config appsettings set \
-    --name $APP_SERVICE_NAME \
-    --resource-group $RESOURCE_GROUP \
+    --name "$APP_SERVICE_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
     --settings APPLICATIONINSIGHTS_CONNECTION_STRING="$APP_INSIGHTS_KEY" >/dev/null
 
 echo ""

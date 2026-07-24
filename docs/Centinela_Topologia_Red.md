@@ -1,33 +1,20 @@
 # Centinela — Topología de Red
 
-**Semana:** 1
-**Estado:** Propuesta inicial — dimensionado para escalar en semanas 2 y 3
+Esta guía describe la topología base aprovisionada por los scripts actuales y su diseño de seguridad.
 
 ---
 
-## 1. Requerimiento no negociable
-
-> Los almacenes de datos no deben ser alcanzables desde internet. Únicamente la subred de aplicación puede acceder a ellos.
-
-Toda la topología se diseña alrededor de esta restricción, aunque los almacenes relacionales/documentales (Cosmos DB) se desplieguen recién en la semana 2 — la red que los va a contener se define **ahora**, porque corregir el aislamiento después de tener datos persistidos es mucho más costoso que diseñarlo bien desde el inicio.
-
----
-
-## 2. Red virtual (VNet)
+## 1. Red virtual (VNet)
 
 | Parámetro | Valor |
 |---|---|
 | Nombre | `centinela-vnet-dev` |
 | Rango de direcciones | `10.0.0.0/16` (65.536 IPs — amplio margen para las 3 semanas) |
-| Región | Misma que el resto de recursos (ver convención de nombres) |
-
-Se usa un rango `/16` completo aunque hoy solo se necesiten dos subredes, porque:
-1. Cuesta cero usar un rango más grande.
-2. Evita tener que rediseñar la VNet cuando aparezcan las subredes de semana 2/3 (Cosmos DB con Private Endpoint, servicios de IA, posible Service Bus).
+| Región | `chilecentral` (ver convención de nombres) |
 
 ---
 
-## 3. Subredes
+## 2. Subredes
 
 | Subred | Nombre | Rango (CIDR) | IPs utilizables | Componentes | Semana |
 |---|---|---|---|---|---|
@@ -35,7 +22,15 @@ Se usa un rango `/16` completo aunque hoy solo se necesiten dos subredes, porque
 | Datos | `centinela-snet-data-dev` | `10.0.2.0/24` | ~251 | Cosmos DB (Private Endpoint), Storage Account (Private Endpoint) | 2 |
 | Futuro / IA | `centinela-snet-future-dev` | `10.0.3.0/24` | ~251 | Servicios de IA, Service Bus si se reemplaza la cola simple, componentes de semana 3 | 3 |
 
-### Sobre el tamaño mínimo de la subred de aplicación
+---
+
+## 3. Objetivo de diseño
+
+La topología busca que la API de ingesta sea el único punto de entrada público y que el acceso a los recursos de datos quede restringido a la subred de aplicación.
+
+---
+
+## 4. Alineación con la implementación
 
 La integración de App Service con VNet (VNet Integration) tiene un requisito de tamaño mínimo: **la subred debe ser al menos `/28`** (16 direcciones, de las cuales Azure reserva 5, dejando 11 utilizables). Ese mínimo es *insuficiente* para este proyecto porque:
 
@@ -44,13 +39,15 @@ La integración de App Service con VNet (VNet Integration) tiene un requisito de
 
 Por eso se dimensiona la subred de aplicación en `/24` (251 IPs utilizables), muy por encima del mínimo, para no tener que rehacer la integración de red cuando el sistema escale.
 
+Los nombres y rangos de red usados en esta guía coinciden con los valores definidos en [infra/scripts/variables.sh](../infra/scripts/variables.sh) y con el aprovisionamiento ejecutado por [infra/scripts/provision.sh](../infra/scripts/provision.sh).
+
 ---
 
-## 4. Reglas de tráfico (deny-by-default)
+## 5. Reglas de tráfico (deny-by-default)
 
 Regla general: **todo el tráfico se deniega por defecto**; solo se permite explícitamente lo que una operación concreta del sistema requiere. Para lograr esto de manera efectiva, se asocia un Grupo de Seguridad de Red (NSG) a cada una de las subredes operativas.
 
-### 4.1 NSG de la Subred de Aplicación (`centinela-nsg-app-dev`)
+### 5.1 NSG de la Subred de Aplicación (`centinela-nsg-app-dev`)
 
 Este NSG protege la subred donde reside la API de ingesta (App Service).
 
@@ -73,7 +70,7 @@ Este NSG protege la subred donde reside la API de ingesta (App Service).
 
 ---
 
-### 4.2 NSG de la Subred de Datos (`centinela-nsg-data-dev`)
+### 5.2 NSG de la Subred de Datos (`centinela-nsg-data-dev`)
 
 Este NSG aísla por completo la capa de datos (Storage Account, Cosmos DB) de accesos no autorizados.
 
@@ -92,7 +89,7 @@ Este NSG aísla por completo la capa de datos (Storage Account, Cosmos DB) de ac
 
 ---
 
-## 5. Mecanismo de aislamiento de la capa de datos
+## 6. Mecanismo de aislamiento de la capa de datos
 
 El brief pide usar **el mecanismo de restricción de acceso por subred que ofrece la plataforma sin costo adicional**. Esto corresponde a **Service Endpoints** (no Private Endpoints, que tienen costo adicional por hora + procesamiento de datos).
 
@@ -105,7 +102,7 @@ El brief pide usar **el mecanismo de restricción de acceso por subred que ofrec
 
 ---
 
-## 6. Prueba de aislamiento (a ejecutar en la validación de cierre)
+## 7. Prueba de aislamiento (a ejecutar en la validación de cierre)
 
 Pasos que Dani/Maribel deben ejecutar y documentar como evidencia:
 
@@ -115,7 +112,7 @@ Pasos que Dani/Maribel deben ejecutar y documentar como evidencia:
 
 ---
 
-## 7. Diagrama de red (descripción para el diagrama visual)
+## 8. Diagrama de red (descripción para el diagrama visual)
 
 ```
 Internet
@@ -148,7 +145,7 @@ Internet
 
 ---
 
-## 8. Pendiente de confirmación
+## 9. Pendiente de confirmación
 
 - [ ] Validar con Dani que el App Service Plan elegido (nivel mínimo con VNet Integration) es compatible con Service Endpoints hacia Storage/Cosmos DB.
-- [ ] Ejecutar y documentar la prueba de aislamiento (sección 6) antes de dar la semana por cerrada.
+- [ ] Ejecutar y documentar la prueba de aislamiento (sección 7) antes de dar la semana por cerrada.
