@@ -2,6 +2,8 @@
 
 set -e
 
+# Configura Azure CLI para que instale automáticamente cualquier extensión requerida
+# (por ejemplo, para Application Insights) sin interrumpir la ejecución con preguntas interactivas.
 az config set extension.use_dynamic_install=yes_without_prompt >/dev/null
 
 source ./infra/scripts/variables.sh
@@ -135,7 +137,8 @@ else
 fi
 
 ############################################################
-# NETWORK SECURITY GROUPS (NSG)
+# GRUPOS DE SEGURIDAD DE RED (NSG)
+# Implementación de la política de seguridad perimetral "deny-by-default"
 ############################################################
 
 echo ""
@@ -152,7 +155,9 @@ else
         --location $LOCATION >/dev/null
 
     echo "Configurando reglas del NSG de Aplicación..."
-    # Inbound: Allow HTTPS from Internet
+    
+    # Entrada: Permitir tráfico HTTPS desde Internet (Puerto 443)
+    # Permite que la API de ingesta reciba transacciones legítimas de los clientes/comercios.
     az network nsg rule create \
         --resource-group $RESOURCE_GROUP \
         --nsg-name $APP_NSG \
@@ -166,7 +171,8 @@ else
         --destination-address-prefixes "*" \
         --destination-port-ranges 443 >/dev/null
 
-    # Inbound: Deny All
+    # Entrada: Denegar todo por defecto
+    # Asegura que ningún otro puerto de la subred de aplicación sea expuesto a internet.
     az network nsg rule create \
         --resource-group $RESOURCE_GROUP \
         --nsg-name $APP_NSG \
@@ -180,7 +186,8 @@ else
         --destination-address-prefixes "*" \
         --destination-port-ranges "*" >/dev/null
 
-    # Outbound: Allow AAD (for Managed Identity)
+    # Salida: Permitir conexión a Microsoft Entra ID (Active Directory)
+    # Requerido para la autenticación basada en tokens de la Identidad Administrada de la Web App.
     az network nsg rule create \
         --resource-group $RESOURCE_GROUP \
         --nsg-name $APP_NSG \
@@ -194,7 +201,8 @@ else
         --destination-address-prefixes AzureActiveDirectory \
         --destination-port-ranges 443 >/dev/null
 
-    # Outbound: Allow Storage
+    # Salida: Permitir conexión a Azure Storage
+    # Habilita el tráfico saliente desde la Web App hacia las colas y blobs del Storage Account.
     az network nsg rule create \
         --resource-group $RESOURCE_GROUP \
         --nsg-name $APP_NSG \
@@ -208,7 +216,8 @@ else
         --destination-address-prefixes Storage \
         --destination-port-ranges 443 >/dev/null
 
-    # Outbound: Allow CosmosDB
+    # Salida: Permitir conexión a Azure Cosmos DB (Semana 2)
+    # Abre los puertos necesarios para la comunicación con la base de datos documental.
     az network nsg rule create \
         --resource-group $RESOURCE_GROUP \
         --nsg-name $APP_NSG \
@@ -222,7 +231,8 @@ else
         --destination-address-prefixes AzureCosmosDB \
         --destination-port-ranges "443,10250-10255" >/dev/null
 
-    # Outbound: Allow Azure Monitor
+    # Salida: Permitir conexión a Azure Monitor / Application Insights
+    # Habilita el envío dinámico de logs, métricas y telemetría de auditoría.
     az network nsg rule create \
         --resource-group $RESOURCE_GROUP \
         --nsg-name $APP_NSG \
@@ -236,7 +246,8 @@ else
         --destination-address-prefixes AzureMonitor \
         --destination-port-ranges 443 >/dev/null
 
-    # Outbound: Deny All
+    # Salida: Denegar todo por defecto
+    # Evita que el código de la API realice descargas externas o exfiltre información no controlada.
     az network nsg rule create \
         --resource-group $RESOURCE_GROUP \
         --nsg-name $APP_NSG \
@@ -265,7 +276,9 @@ else
         --location $LOCATION >/dev/null
 
     echo "Configurando reglas del NSG de Datos..."
-    # Inbound: Allow from App Subnet only
+    
+    # Entrada: Permitir únicamente tráfico desde la subred de aplicación
+    # Aísla la base de datos y almacenamiento de cualquier origen que no sea la API autorizada.
     az network nsg rule create \
         --resource-group $RESOURCE_GROUP \
         --nsg-name $DATA_NSG \
@@ -279,7 +292,8 @@ else
         --destination-address-prefixes $DATA_SUBNET_ADDRESS \
         --destination-port-ranges "443,10250-10255" >/dev/null
 
-    # Inbound: Deny All
+    # Entrada: Denegar todo por defecto
+    # Requerimiento no negociable del brief: capa de datos incomunicada desde internet pública.
     az network nsg rule create \
         --resource-group $RESOURCE_GROUP \
         --nsg-name $DATA_NSG \
@@ -293,7 +307,8 @@ else
         --destination-address-prefixes "*" \
         --destination-port-ranges "*" >/dev/null
 
-    # Outbound: Deny All
+    # Salida: Denegar todo por defecto
+    # Los recursos en la subred de datos nunca inician tráfico saliente; solo responden a peticiones autorizadas.
     az network nsg rule create \
         --resource-group $RESOURCE_GROUP \
         --nsg-name $DATA_NSG \
@@ -308,7 +323,7 @@ else
         --destination-port-ranges "*" >/dev/null
 fi
 
-# Associate NSGs with Subnets
+# Asociación de NSGs con sus subredes correspondientes
 echo ""
 echo "Asociando NSGs a las subredes..."
 
@@ -417,12 +432,16 @@ else
 fi
 
 ############################################################
-# STORAGE FIREWALL & SERVICE ENDPOINTS
+# FIREWALL DEL ALMACENAMIENTO Y SERVICE ENDPOINTS
+# Configuración del aislamiento de red para la capa de datos
 ############################################################
 
 echo ""
 echo "Habilitando Service Endpoints en la Subred de Aplicación..."
 
+# Habilita el Service Endpoint en la subred de aplicación para permitir
+# que el tráfico hacia Azure Storage viaje seguro por el backbone de Azure
+# y pueda ser identificado por el firewall del Storage Account.
 az network vnet subnet update \
     --resource-group $RESOURCE_GROUP \
     --vnet-name $VNET_NAME \
@@ -431,11 +450,15 @@ az network vnet subnet update \
 
 echo "Configurando firewall del Storage Account..."
 
+# Cambia la acción por defecto a 'Deny' para bloquear cualquier acceso
+# desde la red de Internet pública a nuestra Storage Account.
 az storage account update \
     --name $STORAGE_ACCOUNT \
     --resource-group $RESOURCE_GROUP \
     --default-action Deny >/dev/null
 
+# Agrega la regla de red para autorizar el acceso exclusivamente
+# desde la subred de aplicación (donde se ejecuta la API de ingesta).
 az storage account network-rule add \
     --resource-group $RESOURCE_GROUP \
     --account-name $STORAGE_ACCOUNT \
@@ -496,36 +519,44 @@ else
 fi
 
 ############################################################
-# MANAGED IDENTITY
+# IDENTIDAD ADMINISTRADA (MANAGED IDENTITY) Y ROLES RBAC
+# Cumplimiento del principio de menor privilegio y "cero secretos en código"
 ############################################################
 
 echo ""
 echo "Activando Managed Identity..."
 
+# Activa la identidad asignada por el sistema (System-Assigned Managed Identity) en el App Service.
+# Esto crea una identidad en Microsoft Entra ID para la Web App sin necesidad de contraseñas.
 az webapp identity assign \
     --resource-group $RESOURCE_GROUP \
     --name $APP_SERVICE_NAME >/dev/null
 
 echo "Asignando roles RBAC a la Managed Identity del App Service..."
 
+# Obtiene el identificador principal (ObjectId) de la identidad del App Service.
 PRINCIPAL_ID=$(az webapp identity show \
     --resource-group $RESOURCE_GROUP \
     --name $APP_SERVICE_NAME \
     --query principalId \
     -o tsv)
 
+# Obtiene el ID del recurso del Storage Account para limitar el ámbito de los permisos.
 STORAGE_ID=$(az storage account show \
     --resource-group $RESOURCE_GROUP \
     --name $STORAGE_ACCOUNT \
     --query id \
     -o tsv)
 
+# Asigna el rol "Storage Blob Data Contributor" (permite lectura/escritura de blobs) a la API.
+# Se usa || true para hacer la operación idempotente si el rol ya está asignado.
 az role assignment create \
     --assignee-object-id $PRINCIPAL_ID \
     --role "Storage Blob Data Contributor" \
     --scope $STORAGE_ID \
     --assignee-principal-type ServicePrincipal >/dev/null 2>&1 || true
 
+# Asigna el rol "Storage Queue Data Message Sender" (permite enviar mensajes a la cola de ingesta) a la API.
 az role assignment create \
     --assignee-object-id $PRINCIPAL_ID \
     --role "Storage Queue Data Message Sender" \
