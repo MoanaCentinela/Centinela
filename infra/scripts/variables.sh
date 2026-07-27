@@ -18,9 +18,11 @@ VNET_ADDRESS="${VNET_ADDRESS:-10.0.0.0/16}"
 
 APP_SUBNET="${APP_SUBNET:-centinela-snet-app-dev}"
 APP_SUBNET_ADDRESS="${APP_SUBNET_ADDRESS:-10.0.1.0/24}"
+APP_NSG="${APP_NSG:-centinela-nsg-app-dev}"
 
 DATA_SUBNET="${DATA_SUBNET:-centinela-snet-data-dev}"
 DATA_SUBNET_ADDRESS="${DATA_SUBNET_ADDRESS:-10.0.2.0/24}"
+DATA_NSG="${DATA_NSG:-centinela-nsg-data-dev}"
 
 FUTURE_SUBNET="${FUTURE_SUBNET:-centinela-snet-future-dev}"
 FUTURE_SUBNET_ADDRESS="${FUTURE_SUBNET_ADDRESS:-10.0.3.0/24}"
@@ -40,3 +42,10 @@ APP_RUNTIME="${APP_RUNTIME:-NODE:22-lts}"
 STORAGE_ACCOUNT="${STORAGE_ACCOUNT:-stcentinela2607}"
 BLOB_CONTAINER="${BLOB_CONTAINER:-raw-data}"
 QUEUE_NAME="${QUEUE_NAME:-cola-transacciones}"
+
+####################################################
+# MONITOREO
+####################################################
+
+LOG_WORKSPACE="${LOG_WORKSPACE:-centinela-log-dev}"
+APP_INSIGHTS="${APP_INSIGHTS:-centinela-appi-dev}"
