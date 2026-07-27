@@ -626,3 +626,77 @@ echo ""
 echo "========================================"
 echo "INFRAESTRUCTURA LISTA"
 echo "========================================"
+
+############################################################
+# COSMOS DB (SEMANA 2)
+############################################################
+
+echo ""
+echo "Verificando Cosmos DB..."
+
+# Nota: Los nombres en Azure deben ser únicos globalmente. Si da error, cambia el '001'.
+COSMOS_NAME="cosmos-centinela-dev-001" 
+
+if az cosmosdb show --name "$COSMOS_NAME" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1
+then
+    echo "✓ Cosmos DB ya existe."
+else
+    echo "Creando Cosmos DB (Nivel Gratuito, Consistencia: Session)..."
+    az cosmosdb create \
+        --name "$COSMOS_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --enable-free-tier true \
+        --default-consistency-level Session
+
+    echo "Creando Base de Datos 'FraudeDB'..."
+    az cosmosdb sql database create \
+        --account-name "$COSMOS_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --name FraudeDB
+
+    echo "Creando contenedor 'Transacciones' con Partición /accountId y TTL 30 días..."
+    az cosmosdb sql container create \
+        --account-name "$COSMOS_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --database-name FraudeDB \
+        --name Transacciones \
+        --partition-key-path "/accountId" \
+        --default-ttl 2592000
+fi
+
+############################################################
+# BASE DE DATOS SQL (SEMANA 2)
+############################################################
+
+echo ""
+echo "Verificando Servidor SQL..."
+
+SQL_SERVER_NAME="sql-centinela-dev-001"
+SQL_DB_NAME="CasosFraudeDB"
+
+if az sql server show --name "$SQL_SERVER_NAME" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1
+then
+    echo "✓ Servidor SQL ya existe."
+else
+    echo "Creando Servidor SQL Lógico..."
+    az sql server create \
+        --name "$SQL_SERVER_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --location "$LOCATION" \
+        --admin-user "admincentinela" \
+        --admin-password "PasswordSeguro123!"
+
+    echo "Creando Base de Datos SQL..."
+    az sql db create \
+        --resource-group "$RESOURCE_GROUP" \
+        --server "$SQL_SERVER_NAME" \
+        --name "$SQL_DB_NAME" \
+        --service-objective Basic
+
+    echo "Bloqueando acceso a internet para el Servidor SQL..."
+    az sql server update \
+        --name "$SQL_SERVER_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --restrict-outbound-network-access true \
+        --public-network-access Disabled
+fi
