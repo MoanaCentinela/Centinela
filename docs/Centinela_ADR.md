@@ -129,9 +129,21 @@ Se toman tres decisiones clave para la configuración de Cosmos DB:
 
 ---
 
+## ADR-010: Elección de la Capa de Mensajería para Desacoplamiento
+
+**Estado:** Aprobado
+**Contexto:** Se requiere un mecanismo asíncrono para desacoplar la API de Ingesta (productor) del Motor de Scoring (consumidor), garantizando que si el motor sufre una caída, la API siga operando sin perder transacciones.
+**Decisión:** Se implementa **Azure Storage Queues**.
+**Justificación:**
+* **Costo-Eficiencia:** Se alinea perfectamente con la restricción de presupuesto (< 40 USD), ya que su costo en el nivel estándar es de fracciones de centavo por cada 10,000 operaciones.
+* **Simplicidad:** Es más ligero y fácil de aprovisionar que Azure Service Bus. No necesitamos un enrutamiento complejo (Pub/Sub), solo una cola simple de entrega FIFO/First-in-First-out básica.
+* **Integración nativa:** Se integra de forma transparente con los "Queue Triggers" de Azure Functions, permitiendo que el motor se ejecute automáticamente cuando llega un nuevo mensaje sin necesidad de escribir código de sondeo (polling).
+
+---
+
 ## Pendiente de nuevas entradas (semana 1, aún sin decidir)
 
 - [ ] ADR-008 — Nivel de servicio del App Service Plan (justificación de costo) — pendiente de Maribel/Dani
 - [ ] ADR-009 — Decisiones del contrato de la transacción (timestamp, tipo de dato para monto, formato de ubicación, identificador) — pendiente de Vale/Maribel
-- [ ] ADR-010 — Tipo de cola elegida (Queue Storage vs. Service Bus) y si Event Hub se mantiene o se reemplaza — pendiente de decisión de equipo con Dani
+- [x] ADR-010 — Tipo de cola elegida (Queue Storage vs. Service Bus) y si Event Hub se mantiene o se reemplaza — pendiente de decisión de equipo con Dani
 - [ ] ADR-011 — Nivel de redundancia y política de ciclo de vida del contenedor de documentos — pendiente de Dani/Mary
