@@ -1,11 +1,37 @@
 import { TransactionValidator } from "../../validation/services/TransactionValidator.js";
 import { MemoryTransactionRepository } from "../repositories/MemoryTransactionRepository.js";
 import { TransactionRequest } from "../../../shared/contracts/index.js";
+import { EventPublisher } from "../../../shared/ports/EventPublisher.js";
+import { RuleLogger } from "../../../shared/ports/RuleLogger.js";
+import { ConfigurationProvider } from "../../../shared/config/ConfigurationProvider.js";
+import { RuleEvaluation } from "../../../shared/models/RuleEvaluation.js";
+import { TransactionAcceptedEvent } from "../../../shared/contracts/events/index.js";
+import type { TransactionRepository } from "../../../shared/ports/TransactionRepository.js";
 
-const repository = new MemoryTransactionRepository();
+export interface TransactionServiceDependencies {
+  validator?: TransactionValidator;
+  repository?: TransactionRepository;
+  eventPublisher?: EventPublisher;
+  ruleLogger?: RuleLogger;
+  configuration?: ConfigurationProvider;
+}
 
 export class TransactionService {
-  private validator = new TransactionValidator();
+  private readonly validator: TransactionValidator;
+  private readonly repository: TransactionRepository;
+  private readonly eventPublisher: EventPublisher;
+  private readonly ruleLogger: RuleLogger;
+  private readonly configuration: ConfigurationProvider;
+
+  constructor(dependencies: TransactionServiceDependencies = {}) {
+    this.validator = dependencies.validator ?? new TransactionValidator();
+    this.repository = dependencies.repository ?? new MemoryTransactionRepository();
+    this.eventPublisher = dependencies.eventPublisher ?? { publish: async () => undefined };
+    this.ruleLogger = dependencies.ruleLogger ?? { log: () => undefined };
+    this.configuration = dependencies.configuration ?? {
+      get: () => undefined,
+    };
+  }
 
   async processTransaction(transaction: TransactionRequest) {
     const errors = this.validator.validate(transaction);
@@ -18,7 +44,7 @@ export class TransactionService {
       };
     }
 
-    const exists = await repository.exists(transaction.transactionId);
+    const exists = await this.repository.exists(transaction.transactionId);
 
     if (exists) {
       return {
@@ -28,21 +54,48 @@ export class TransactionService {
       };
     }
 
-await repository.save(transaction);
+    await this.repository.save(transaction);
 
-/*
- * FUTURO (Semana 2)
- *
- * Aquí se publicará un evento en la cola de mensajes de Azure.
- *
- * El Motor de Scoring consumirá ese evento de forma asíncrona
- * sin afectar el tiempo de respuesta de esta API.
- */
+    const threshold = this.getThreshold();
+    const score = this.calculateScore(transaction.amount);
+    const ruleEvaluation: RuleEvaluation = {
+      ruleName: "amount-threshold",
+      observedValue: score,
+      threshold,
+      explanation: "El valor observado del score supera el umbral configurado.",
+      result: score >= threshold ? "passed" : "failed",
+      timestamp: new Date().toISOString(),
+    };
 
-return {
-    success: true,
-    duplicate: false,
-    message: "Transacción recibida correctamente.",
-};
+    this.ruleLogger.log(ruleEvaluation);
+
+    const event: TransactionAcceptedEvent = {
+      eventType: "TransactionAccepted",
+      transactionId: transaction.transactionId,
+      accountId: transaction.accountId,
+      occurredAt: new Date().toISOString(),
+    };
+
+    await this.eventPublisher.publish(event);
+
+    return {
+      success: true,
+      duplicate: false,
+      message: "Transacción recibida correctamente.",
+    };
+  }
+
+  private getThreshold(): number {
+    const configuredValue = this.configuration.get("SCORE_THRESHOLD");
+
+    if (typeof configuredValue === "number") {
+      return configuredValue;
+    }
+
+    return 1000;
+  }
+
+  private calculateScore(amount: number): number {
+    return amount > 0 ? Math.round(amount / 10) : 0;
   }
 }
