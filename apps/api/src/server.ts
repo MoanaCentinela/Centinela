@@ -1,14 +1,10 @@
-import Fastify from "fastify";
-import { transactionRoutes } from "./modules/ingestion/controllers/transaction.routes.js";
-
-const app = Fastify({
-  logger: true,
-});
-
-app.register(transactionRoutes);
+import { buildApp } from "./app.js";
 
 const start = async () => {
   const port = Number(process.env.PORT ?? 3000);
+  
+  // Construir e inicializar la aplicación con sus middlewares y rutas registradas.
+  const app = await buildApp();
 
   try {
     await app.listen({
@@ -18,7 +14,7 @@ const start = async () => {
 
     console.log(`API ejecutándose en http://0.0.0.0:${port}`);
   } catch (error) {
-    app.log.error(error);
+    console.error("Error al iniciar el servidor:", error);
     process.exit(1);
   }
 };
