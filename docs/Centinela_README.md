@@ -109,6 +109,32 @@ curl https://<nombre-storage-account>.blob.core.windows.net/raw-data
 ```
 *Resultado esperado:* **403 Forbidden** (Acceso denegado por las reglas de red del Storage Account).
 
+### 6.4 Verificar el Control de Tasa (Rate Limiting) (esperado: 429 Too Many Requests)
+La API cuenta con protección contra abuso por medio del plugin oficial `@fastify/rate-limit`, limitando a un máximo de **100 peticiones por minuto por IP de origen**.
+
+Para comprobar el límite localmente, puedes enviar una ráfaga rápida de 101 peticiones:
+* En **PowerShell (Windows)**:
+  ```powershell
+  for ($i=1; $i -le 101; $i++) { curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:3000/transactions }
+  ```
+* En **Bash (Linux/Mac)**:
+  ```bash
+  for i in {1..101}; do curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:3000/transactions; done
+  ```
+
+*Resultado esperado:* Las primeras 100 responderán con `400` (o `202`/`200` si usas payloads válidos) y la petición 101 responderá con **429 (Too Many Requests)** y una estructura de error estandarizada:
+```json
+{
+  "success": false,
+  "message": "Límite de peticiones excedido. Por favor, intente de nuevo más tarde.",
+  "errors": [
+    "Límite: 100 peticiones",
+    "Ventana: 1 minute"
+  ],
+  "statusCode": 429
+}
+```
+
 ---
 
 ## 7. Eliminación de infraestructura (Cierre de jornada)
