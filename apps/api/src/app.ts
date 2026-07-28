@@ -2,12 +2,22 @@ import Fastify from "fastify";
 import rateLimit from "@fastify/rate-limit";
 import { transactionRoutes } from "./modules/ingestion/controllers/transaction.routes.js";
 import { ApiResponse } from "./responses/index.js";
+import { TransactionService } from "./modules/ingestion/services/TransactionService.js";
+import { EnvironmentConfigurationProvider } from "./shared/config/EnvironmentConfigurationProvider.js";
+import { InMemoryEventPublisher } from "./infrastructure/queue/InMemoryEventPublisher.js";
+import { ConsoleLogger } from "./infrastructure/logging/ConsoleLogger.js";
 
 // Función factory para crear y configurar la aplicación Fastify.
 // Esto permite instanciarla y probarla de forma aislada en las pruebas sin ocupar un puerto de red real.
 export async function buildApp() {
   const app = Fastify({
     logger: false, // Desactivamos el logger en pruebas para evitar contaminación de consola, en producción se configura en server.ts
+  });
+
+  const transactionService = new TransactionService({
+    eventPublisher: new InMemoryEventPublisher(),
+    ruleLogger: new ConsoleLogger(),
+    configuration: new EnvironmentConfigurationProvider(),
   });
 
   // Registrar el plugin de control de tasa (@fastify/rate-limit)
@@ -35,7 +45,7 @@ export async function buildApp() {
   });
 
   // Registrar las rutas de transacciones.
-  await app.register(transactionRoutes);
+  await app.register(transactionRoutes, { service: transactionService });
 
   return app;
 }
