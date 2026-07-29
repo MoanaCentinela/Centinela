@@ -6,29 +6,63 @@ import { TransactionService } from "./modules/ingestion/services/TransactionServ
 import { EnvironmentConfigurationProvider } from "./shared/config/EnvironmentConfigurationProvider.js";
 import { InMemoryEventPublisher } from "./infrastructure/queue/InMemoryEventPublisher.js";
 import { ConsoleLogger } from "./infrastructure/logging/ConsoleLogger.js";
+import { MemoryTransactionRepository } from "./modules/ingestion/repositories/MemoryTransactionRepository.js";
+import { MemoryTransactionHistoryProvider } from "./infrastructure/history/MemoryTransactionHistoryProvider.js";
+import { MemoryCaseRepository } from "./infrastructure/cases/MemoryCaseRepository.js";
+import { RuleEngine } from "./modules/scoring/engine/RuleEngine.js";
+import { VelocityRule } from "./modules/scoring/rules/VelocityRule.js";
+import { AmountRule } from "./modules/scoring/rules/AmountRule.js";
+import { ImpossibleGeoRule } from "./modules/scoring/rules/ImpossibleGeoRule.js";
+import { RiskMerchantRule } from "./modules/scoring/rules/RiskMerchantRule.js";
+import { ScoringEngine } from "./modules/scoring/services/ScoringEngine.js";
+import { TransactionAcceptedConsumer } from "./modules/scoring/consumers/TransactionAcceptedConsumer.js";
 
-// Función factory para crear y configurar la aplicación Fastify.
-// Esto permite instanciarla y probarla de forma aislada en las pruebas sin ocupar un puerto de red real.
-export async function buildApp() {
+export async function buildApp(options: {
+  eventPublisher?: InMemoryEventPublisher;
+  caseRepository?: MemoryCaseRepository;
+} = {}) {
   const app = Fastify({
-    logger: false, // Desactivamos el logger en pruebas para evitar contaminación de consola, en producción se configura en server.ts
+    logger: false,
+  });
+
+  const configuration = new EnvironmentConfigurationProvider();
+  const eventPublisher = options.eventPublisher ?? new InMemoryEventPublisher();
+  const caseRepository = options.caseRepository ?? new MemoryCaseRepository();
+  const historyProvider = new MemoryTransactionHistoryProvider();
+  const repository = new MemoryTransactionRepository(historyProvider);
+
+  const ruleEngine = new RuleEngine([
+    new VelocityRule(3, 35),
+    new AmountRule(5, 30),
+    new ImpossibleGeoRule(900, 50),
+    new RiskMerchantRule(["MERCH-999", "CRYPTO-EX-01", "CASINO-VIP"], ["CASINO", "CRYPTO"], 40),
+  ]);
+
+  const scoringEngine = new ScoringEngine({
+    ruleEngine,
+    historyProvider,
+    caseRepository,
+    configuration,
+  });
+
+  const consumer = new TransactionAcceptedConsumer(scoringEngine, repository);
+
+  // Suscribir el consumidor al evento TransactionAccepted emitido por la ingesta
+  eventPublisher.subscribe("TransactionAccepted", async (event) => {
+    await consumer.handle(event);
   });
 
   const transactionService = new TransactionService({
-    eventPublisher: new InMemoryEventPublisher(),
+    validator: undefined,
+    repository,
+    eventPublisher,
     ruleLogger: new ConsoleLogger(),
-    configuration: new EnvironmentConfigurationProvider(),
+    configuration,
   });
 
-  // Registrar el plugin de control de tasa (@fastify/rate-limit)
-  // para proteger la API contra saturación y denegación de servicio (DoS).
   await app.register(rateLimit, {
-    // Número máximo de peticiones permitidas en la ventana de tiempo.
     max: 100,
-    // Ventana de tiempo establecida a 1 minuto.
     timeWindow: "1 minute",
-    // Usar almacenamiento en memoria LRU por defecto.
-    // Personalización del formato de respuesta ante el error HTTP 429 (Too Many Requests).
     errorResponseBuilder: (request, context) => {
       const apiResponse = ApiResponse.error(
         "Límite de peticiones excedido. Por favor, intente de nuevo más tarde.",
@@ -44,8 +78,10 @@ export async function buildApp() {
     },
   });
 
-  // Registrar las rutas de transacciones.
   await app.register(transactionRoutes, { service: transactionService });
+
+  // Exponer el repositorio de casos en la instancia para inspección en pruebas/consultas
+  (app as any).caseRepository = caseRepository;
 
   return app;
 }
