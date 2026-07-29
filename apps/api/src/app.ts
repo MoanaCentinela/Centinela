@@ -45,12 +45,13 @@ export async function buildApp(options: {
     configuration,
   });
 
-  const consumer = new TransactionAcceptedConsumer(scoringEngine, repository);
+  // COMENTADO PARA ROMPER EL MONOLITO Y DESACOPLAR
+  // const consumer = new TransactionAcceptedConsumer(scoringEngine, repository);
 
   // Suscribir el consumidor al evento TransactionAccepted emitido por la ingesta
-  eventPublisher.subscribe("TransactionAccepted", async (event) => {
-    await consumer.handle(event);
-  });
+  // eventPublisher.subscribe("TransactionAccepted", async (event) => {
+  //   await consumer.handle(event);
+  // });
 
   const transactionService = new TransactionService({
     validator: undefined,

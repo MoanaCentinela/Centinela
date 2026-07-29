@@ -49,7 +49,8 @@ az webapp config set \
     > /dev/null
 
 echo ""
-echo "Desplegando aplicación desde la carpeta compilada..."
+echo ""
+echo "Desplegando la API..."
 
 cd "$REPO_ROOT/apps/api"
 
@@ -60,6 +61,39 @@ az webapp up \
     --os-type Linux \
     --sku B1 \
     > /dev/null
+
+echo "✓ API desplegada exitosamente."
+
+echo ""
+echo "========================================"
+echo "DEPLOY MOTOR SCORING (FUNCTION APP)"
+echo "========================================"
+
+cd "$REPO_ROOT/apps/motor-scoring"
+
+echo ""
+echo "Instalando dependencias del motor..."
+pnpm install
+
+echo ""
+echo "Compilando motor de scoring..."
+pnpm build
+
+echo ""
+echo "Empaquetando y desplegando a Azure Functions..."
+
+# Empaquetamos todo en un .zip para desplegar
+zip -r deploy.zip . -x "*.git*" "*src*" "*.ts" > /dev/null
+
+az functionapp deployment source config-zip \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$FUNCTION_APP_NAME" \
+    --src deploy.zip \
+    > /dev/null
+
+rm deploy.zip
+
+echo "✓ Function App desplegada exitosamente."
 
 echo ""
 echo "Deploy finalizado."

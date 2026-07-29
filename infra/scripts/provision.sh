@@ -490,6 +490,31 @@ else
 fi
 
 ############################################################
+# FUNCTION APP (MOTOR DE SCORING)
+############################################################
+
+echo ""
+echo "Verificando Function App..."
+
+if az functionapp show \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$FUNCTION_APP_NAME" >/dev/null 2>&1
+then
+    echo "✓ Function App ya existe."
+else
+    echo "Creando Function App..."
+    az functionapp create \
+        --resource-group "$RESOURCE_GROUP" \
+        --name "$FUNCTION_APP_NAME" \
+        --storage-account "$STORAGE_ACCOUNT" \
+        --consumption-plan-location "$LOCATION" \
+        --runtime node \
+        --runtime-version 20 \
+        --functions-version 4 \
+        --os-type Linux
+fi
+
+############################################################
 # IDENTIDAD ADMINISTRADA (MANAGED IDENTITY) Y ROLES RBAC
 # Cumplimiento del principio de menor privilegio y "cero secretos en código"
 ############################################################

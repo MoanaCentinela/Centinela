@@ -28,12 +28,13 @@ FUTURE_SUBNET="${FUTURE_SUBNET:-centinela-snet-future-dev}"
 FUTURE_SUBNET_ADDRESS="${FUTURE_SUBNET_ADDRESS:-10.0.3.0/24}"
 
 ####################################################
-# APP SERVICE
+# APP SERVICE & FUNCTION
 ####################################################
 
 APP_SERVICE_PLAN="${APP_SERVICE_PLAN:-asp-centinela-dev}"
 APP_SERVICE_NAME="${APP_SERVICE_NAME:-centinela-api-dev}"
 APP_RUNTIME="${APP_RUNTIME:-NODE:22-lts}"
+FUNCTION_APP_NAME="${FUNCTION_APP_NAME:-centinela-func-dev-001}"
 
 ####################################################
 # STORAGE
