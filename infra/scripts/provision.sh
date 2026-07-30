@@ -507,7 +507,7 @@ else
         --resource-group "$RESOURCE_GROUP" \
         --name "$FUNCTION_APP_NAME" \
         --storage-account "$STORAGE_ACCOUNT" \
-        --consumption-plan-location "$LOCATION" \
+        --plan "$APP_SERVICE_PLAN" \
         --runtime node \
         --runtime-version 24 \
         --functions-version 4 \
