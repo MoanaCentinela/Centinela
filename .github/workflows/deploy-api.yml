@@ -1,0 +1,61 @@
+name: Deploy API to Azure
+
+on:
+  push:
+    branches:
+      - develop
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build API
+        run: pnpm --filter api build
+
+      - name: Create Production Bundle
+        run: |
+          mkdir -p deploy-pkg
+          cp apps/api/package.json deploy-pkg/
+          cp -r apps/api/dist deploy-pkg/dist
+          cd deploy-pkg && npm install --omit=dev --legacy-peer-deps && rm -f oryx-manifest.toml node_modules.tar.gz && zip -r ../release.zip . && cd ..
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Configure App Service Settings
+        run: |
+          az webapp config appsettings set \
+            --resource-group rg-centinela-dev \
+            --name centinela-api-dev \
+            --settings SCM_DO_BUILD_DURING_DEPLOYMENT="false" ENABLE_ORYX_BUILD="false"
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: centinela-api-dev
+          package: release.zip

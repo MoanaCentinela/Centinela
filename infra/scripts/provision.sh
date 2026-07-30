@@ -173,7 +173,7 @@ else
         --resource-group $RESOURCE_GROUP \
         --nsg-name $APP_NSG \
         --name Deny-All-Inbound \
-        --priority 65500 \
+        --priority 4096 \
         --direction Inbound \
         --access Deny \
         --protocol "*" \
@@ -225,7 +225,7 @@ else
         --source-address-prefixes "*" \
         --source-port-ranges "*" \
         --destination-address-prefixes AzureCosmosDB \
-        --destination-port-ranges "443,10250-10255" >/dev/null
+        --destination-port-ranges 443 10250-10255 >/dev/null
 
     # Salida: Permitir conexión a Azure Monitor / Application Insights
     # Habilita el envío dinámico de logs, métricas y telemetría de auditoría.
@@ -263,7 +263,7 @@ else
         --resource-group $RESOURCE_GROUP \
         --nsg-name $APP_NSG \
         --name Deny-All-Outbound \
-        --priority 65500 \
+        --priority 4096 \
         --direction Outbound \
         --access Deny \
         --protocol "*" \
@@ -301,7 +301,7 @@ else
         --source-address-prefixes $APP_SUBNET_ADDRESS \
         --source-port-ranges "*" \
         --destination-address-prefixes $DATA_SUBNET_ADDRESS \
-        --destination-port-ranges "443,10250-10255" >/dev/null
+        --destination-port-ranges 443 10250-10255 >/dev/null
 
     # Entrada: Denegar todo por defecto
     # Requerimiento no negociable del brief: capa de datos incomunicada desde internet pública.
@@ -309,7 +309,7 @@ else
         --resource-group $RESOURCE_GROUP \
         --nsg-name $DATA_NSG \
         --name Deny-All-Inbound \
-        --priority 65500 \
+        --priority 4096 \
         --direction Inbound \
         --access Deny \
         --protocol "*" \
@@ -324,7 +324,7 @@ else
         --resource-group $RESOURCE_GROUP \
         --nsg-name $DATA_NSG \
         --name Deny-All-Outbound \
-        --priority 65500 \
+        --priority 4096 \
         --direction Outbound \
         --access Deny \
         --protocol "*" \
@@ -502,6 +502,31 @@ else
         --plan "$APP_SERVICE_PLAN" \
         --name "$APP_SERVICE_NAME" \
         --runtime "$APP_RUNTIME"
+fi
+
+############################################################
+# FUNCTION APP (MOTOR DE SCORING)
+############################################################
+
+echo ""
+echo "Verificando Function App..."
+
+if az functionapp show \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$FUNCTION_APP_NAME" >/dev/null 2>&1
+then
+    echo "✓ Function App ya existe."
+else
+    echo "Creando Function App..."
+    az functionapp create \
+        --resource-group "$RESOURCE_GROUP" \
+        --name "$FUNCTION_APP_NAME" \
+        --storage-account "$STORAGE_ACCOUNT" \
+        --plan "$APP_SERVICE_PLAN" \
+        --runtime node \
+        --runtime-version 24 \
+        --functions-version 4 \
+        --os-type Linux
 fi
 
 ############################################################
