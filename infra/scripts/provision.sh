@@ -225,7 +225,7 @@ else
         --source-address-prefixes "*" \
         --source-port-ranges "*" \
         --destination-address-prefixes AzureCosmosDB \
-        --destination-port-ranges "443,10250-10255" >/dev/null
+        --destination-port-ranges 443 10250-10255 >/dev/null
 
     # Salida: Permitir conexión a Azure Monitor / Application Insights
     # Habilita el envío dinámico de logs, métricas y telemetría de auditoría.
@@ -286,7 +286,7 @@ else
         --source-address-prefixes $APP_SUBNET_ADDRESS \
         --source-port-ranges "*" \
         --destination-address-prefixes $DATA_SUBNET_ADDRESS \
-        --destination-port-ranges "443,10250-10255" >/dev/null
+        --destination-port-ranges 443 10250-10255 >/dev/null
 
     # Entrada: Denegar todo por defecto
     # Requerimiento no negociable del brief: capa de datos incomunicada desde internet pública.
