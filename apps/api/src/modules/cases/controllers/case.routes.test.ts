@@ -3,9 +3,17 @@ import { buildApp } from "../../../app.js";
 
 describe("Case Management Routes (REST API)", () => {
   let app: any;
+  let analystToken: string;
 
   beforeAll(async () => {
     app = await buildApp();
+
+    const loginRes = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: { username: "analista", password: "Analista123!" },
+    });
+    analystToken = JSON.parse(loginRes.payload).data.token;
   });
 
   afterAll(async () => {
@@ -16,6 +24,7 @@ describe("Case Management Routes (REST API)", () => {
     const response = await app.inject({
       method: "GET",
       url: "/cases",
+      headers: { authorization: `Bearer ${analystToken}` },
     });
 
     expect(response.statusCode).toBe(200);
@@ -46,6 +55,7 @@ describe("Case Management Routes (REST API)", () => {
     const getRes = await app.inject({
       method: "GET",
       url: "/cases",
+      headers: { authorization: `Bearer ${analystToken}` },
     });
 
     expect(getRes.statusCode).toBe(200);
@@ -59,6 +69,7 @@ describe("Case Management Routes (REST API)", () => {
     const getByIdRes = await app.inject({
       method: "GET",
       url: `/cases/${createdCase.id}`,
+      headers: { authorization: `Bearer ${analystToken}` },
     });
 
     expect(getByIdRes.statusCode).toBe(200);
@@ -69,6 +80,7 @@ describe("Case Management Routes (REST API)", () => {
     const resolveRes = await app.inject({
       method: "PATCH",
       url: `/cases/${createdCase.id}/resolve`,
+      headers: { authorization: `Bearer ${analystToken}` },
       payload: {
         decision: "CONFIRMED_FRAUD",
         notes: "Transacción confirmada como fraude por el analista.",
@@ -85,6 +97,7 @@ describe("Case Management Routes (REST API)", () => {
     const docRes = await app.inject({
       method: "POST",
       url: `/cases/${createdCase.id}/documents`,
+      headers: { authorization: `Bearer ${analystToken}` },
       payload: {
         filename: "cedula_analista.pdf",
         documentType: "ID_CARD",
