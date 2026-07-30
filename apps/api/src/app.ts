@@ -1,5 +1,4 @@
 import Fastify from "fastify";
-import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { transactionRoutes } from "./modules/ingestion/controllers/transaction.routes.js";
 import { caseRoutes } from "./modules/cases/controllers/case.routes.js";
@@ -64,10 +63,6 @@ export async function buildApp(options: {
   });
 
   const caseService = new CaseService(caseRepository);
-
-  await app.register(cors, {
-    origin: true,
-  });
 
   await app.register(rateLimit, {
     max: 100,
