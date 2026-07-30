@@ -509,7 +509,7 @@ else
         --storage-account "$STORAGE_ACCOUNT" \
         --consumption-plan-location "$LOCATION" \
         --runtime node \
-        --runtime-version 20 \
+        --runtime-version 24 \
         --functions-version 4 \
         --os-type Linux
 fi
