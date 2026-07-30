@@ -173,7 +173,7 @@ else
         --resource-group $RESOURCE_GROUP \
         --nsg-name $APP_NSG \
         --name Deny-All-Inbound \
-        --priority 65500 \
+        --priority 4096 \
         --direction Inbound \
         --access Deny \
         --protocol "*" \
@@ -248,7 +248,7 @@ else
         --resource-group $RESOURCE_GROUP \
         --nsg-name $APP_NSG \
         --name Deny-All-Outbound \
-        --priority 65500 \
+        --priority 4096 \
         --direction Outbound \
         --access Deny \
         --protocol "*" \
@@ -294,7 +294,7 @@ else
         --resource-group $RESOURCE_GROUP \
         --nsg-name $DATA_NSG \
         --name Deny-All-Inbound \
-        --priority 65500 \
+        --priority 4096 \
         --direction Inbound \
         --access Deny \
         --protocol "*" \
@@ -309,7 +309,7 @@ else
         --resource-group $RESOURCE_GROUP \
         --nsg-name $DATA_NSG \
         --name Deny-All-Outbound \
-        --priority 65500 \
+        --priority 4096 \
         --direction Outbound \
         --access Deny \
         --protocol "*" \
