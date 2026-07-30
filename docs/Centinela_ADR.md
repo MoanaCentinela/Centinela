@@ -95,9 +95,55 @@ Cada vez que el equipo tome una decisión de arquitectura relevante (una que sea
 
 ---
 
+## ADR-012 — Decisiones de Arquitectura Semana 2 - Cosmos DB
+
+**Contexto:** Se requiere configurar Cosmos DB para el almacenamiento de transacciones en caliente y optimizar las consultas del motor de scoring en tiempo real (detección de fraude basada en ventanas temporales cortas).
+Decisiones de Arquitectura Semana 2 - Cosmos DB
+Clave de Partición Seleccionada: /accountId
+
+Justificación: El perfil de carga exige escrituras constantes y una consulta dominante: obtener las transacciones recientes de una cuenta determinada. Al particionar por accountId, garantizamos que todo el historial de una cuenta viva en el mismo nodo físico.
+
+Consulta que optimiza: Lecturas puntuales del historial de un usuario (Single-partition read).
+
+Consulta que sacrifica: Búsquedas globales, como "obtener todas las transacciones hechas en una ciudad o en un comercio específico" (Cross-partition query), las cuales serían lentas y costosas, pero no son el objetivo de este motor en tiempo real.
+
+Nivel de Consistencia: Session (Sesión)
+
+Justificación: Ofrece el compromiso ideal entre baja latencia y garantía de lectura. El caso de uso no requiere consistencia fuerte (Strong) ya que penalizaría los tiempos de respuesta geográficos. Con consistencia de sesión, garantizamos que el motor de scoring siempre lea la última transacción escrita por la API (Monotonic Reads).
+
+Política de Expiración de Datos (TTL): 2592000 segundos (30 días)
+
+Justificación: Las reglas de detección (velocidad y monto atípico) operan en ventanas temporales cortas (horas o pocos días). Mantener registros más antiguos en la base de datos de transacciones en caliente (Cosmos DB) genera costos de almacenamiento innecesarios. A los 30 días, el registro deja de aportar al análisis y se elimina automáticamente.
+**Decisión:**
+Se toman tres decisiones clave para la configuración de Cosmos DB:
+1. **Clave de partición:** `/accountId`. El perfil de carga exige escrituras constantes y consultas puntuales del historial reciente de un usuario. Esto garantiza que todo el historial de una cuenta viva en el mismo nodo físico (optimizando *Single-partition read*).
+2. **Nivel de consistencia:** *Session* (Sesión). Ofrece el compromiso ideal entre baja latencia y garantía de lectura. Garantizamos que el motor de scoring siempre lea la última transacción escrita por la API (*Monotonic Reads*), sin penalizar tiempos de respuesta.
+3. **Política de expiración (TTL):** 2592000 segundos (30 días). Las reglas de detección operan en ventanas cortas (horas/días). Mantener registros antiguos genera costos innecesarios; a los 30 días se eliminan automáticamente.
+
+**Alternativas consideradas:**
+- **Clave de partición global (ej. por ciudad o comercio):** Descartado. Optimizaría búsquedas globales (*Cross-partition query*), pero sacrificaría latencia y costo para las lecturas por cuenta, que son la consulta dominante.
+- **Consistencia Fuerte (Strong):** Descartado. Penalizaría la latencia geográfica.
+- **Retención indefinida (sin TTL):** Descartado. Costos de almacenamiento acumulativos.
+
+**Consecuencias:** Las consultas globales sobre transacciones (ej. "todas las transacciones en una ciudad") serán lentas y costosas, por lo que no deben ejecutarse contra este almacén en caliente.
+
+---
+
+## ADR-010: Elección de la Capa de Mensajería para Desacoplamiento
+
+**Estado:** Aprobado
+**Contexto:** Se requiere un mecanismo asíncrono para desacoplar la API de Ingesta (productor) del Motor de Scoring (consumidor), garantizando que si el motor sufre una caída, la API siga operando sin perder transacciones.
+**Decisión:** Se implementa **Azure Storage Queues**.
+**Justificación:**
+* **Costo-Eficiencia:** Se alinea perfectamente con la restricción de presupuesto (< 40 USD), ya que su costo en el nivel estándar es de fracciones de centavo por cada 10,000 operaciones.
+* **Simplicidad:** Es más ligero y fácil de aprovisionar que Azure Service Bus. No necesitamos un enrutamiento complejo (Pub/Sub), solo una cola simple de entrega FIFO/First-in-First-out básica.
+* **Integración nativa:** Se integra de forma transparente con los "Queue Triggers" de Azure Functions, permitiendo que el motor se ejecute automáticamente cuando llega un nuevo mensaje sin necesidad de escribir código de sondeo (polling).
+
+---
+
 ## Pendiente de nuevas entradas (semana 1, aún sin decidir)
 
 - [ ] ADR-008 — Nivel de servicio del App Service Plan (justificación de costo) — pendiente de Maribel/Dani
 - [ ] ADR-009 — Decisiones del contrato de la transacción (timestamp, tipo de dato para monto, formato de ubicación, identificador) — pendiente de Vale/Maribel
-- [ ] ADR-010 — Tipo de cola elegida (Queue Storage vs. Service Bus) y si Event Hub se mantiene o se reemplaza — pendiente de decisión de equipo con Dani
+- [x] ADR-010 — Tipo de cola elegida (Queue Storage vs. Service Bus) y si Event Hub se mantiene o se reemplaza — pendiente de decisión de equipo con Dani
 - [ ] ADR-011 — Nivel de redundancia y política de ciclo de vida del contenedor de documentos — pendiente de Dani/Mary

@@ -1,41 +1,36 @@
 # Centinela — Topología de Red
 
-**Semana:** 1
-**Estado:** Propuesta inicial — dimensionado para escalar en semanas 2 y 3
+Esta guía describe la topología base aprovisionada por los scripts actuales y su diseño de seguridad.
 
 ---
 
-## 1. Requerimiento no negociable
-
-> Los almacenes de datos no deben ser alcanzables desde internet. Únicamente la subred de aplicación puede acceder a ellos.
-
-Toda la topología se diseña alrededor de esta restricción, aunque los almacenes relacionales/documentales (Cosmos DB) se desplieguen recién en la semana 2 — la red que los va a contener se define **ahora**, porque corregir el aislamiento después de tener datos persistidos es mucho más costoso que diseñarlo bien desde el inicio.
-
----
-
-## 2. Red virtual (VNet)
+## 1. Red virtual (VNet)
 
 | Parámetro | Valor |
 |---|---|
 | Nombre | `centinela-vnet-dev` |
 | Rango de direcciones | `10.0.0.0/16` (65.536 IPs — amplio margen para las 3 semanas) |
-| Región | Misma que el resto de recursos (ver convención de nombres) |
-
-Se usa un rango `/16` completo aunque hoy solo se necesiten dos subredes, porque:
-1. Cuesta cero usar un rango más grande.
-2. Evita tener que rediseñar la VNet cuando aparezcan las subredes de semana 2/3 (Cosmos DB con Private Endpoint, servicios de IA, posible Service Bus).
+| Región | `chilecentral` (ver convención de nombres) |
 
 ---
 
-## 3. Subredes
+## 2. Subredes
 
 | Subred | Nombre | Rango (CIDR) | IPs utilizables | Componentes | Semana |
 |---|---|---|---|---|---|
 | Aplicación | `centinela-snet-app-dev` | `10.0.1.0/24` | ~251 | App Service (API de ingesta) vía VNet Integration | 1 |
-| Datos | `centinela-snet-data-dev` | `10.0.2.0/24` | ~251 | Cosmos DB (Private Endpoint), Storage Account (Private Endpoint) | 2 |
+| Datos | `centinela-snet-data-dev` | `10.0.2.0/24` | ~251 | Cosmos DB (Service Endpoint), Storage Account (Service Endpoint), SQL Database (VNet Rule) | 2 |
 | Futuro / IA | `centinela-snet-future-dev` | `10.0.3.0/24` | ~251 | Servicios de IA, Service Bus si se reemplaza la cola simple, componentes de semana 3 | 3 |
 
-### Sobre el tamaño mínimo de la subred de aplicación
+---
+
+## 3. Objetivo de diseño
+
+La topología busca que la API de ingesta sea el único punto de entrada público y que el acceso a los recursos de datos quede restringido a la subred de aplicación.
+
+---
+
+## 4. Alineación con la implementación
 
 La integración de App Service con VNet (VNet Integration) tiene un requisito de tamaño mínimo: **la subred debe ser al menos `/28`** (16 direcciones, de las cuales Azure reserva 5, dejando 11 utilizables). Ese mínimo es *insuficiente* para este proyecto porque:
 
@@ -44,39 +39,71 @@ La integración de App Service con VNet (VNet Integration) tiene un requisito de
 
 Por eso se dimensiona la subred de aplicación en `/24` (251 IPs utilizables), muy por encima del mínimo, para no tener que rehacer la integración de red cuando el sistema escale.
 
----
-
-## 4. Reglas de tráfico (deny-by-default)
-
-Regla general: **todo el tráfico se deniega por defecto**; solo se permite explícitamente lo que una operación concreta del sistema requiere. No existe ninguna regla que permita tráfico desde cualquier origen (`0.0.0.0/0` / `*` / `Internet` como origen amplio).
-
-| # | Origen | Destino | Puerto | Protocolo | Justificación operativa |
-|---|---|---|---|---|---|
-| 1 | Internet | `centinela-snet-app-dev` (App Service) | 443 | TCP/HTTPS | Permite que la API de ingesta reciba transacciones de los clientes/comercios. Único punto de entrada público del sistema. |
-| 2 | `centinela-snet-app-dev` | `centinela-snet-data-dev` | 443 | TCP/HTTPS | La API necesita persistir la transacción cruda en Cosmos DB / Storage (semana 2). |
-| 3 | `centinela-snet-app-dev` | Storage Queue (endpoint de servicio) | 443 | TCP/HTTPS | La API publica en la cola de ingesta para absorber ráfagas. |
-| 4 | `centinela-snet-app-dev` | Storage Account — Blob (endpoint de servicio) | 443 | TCP/HTTPS | Carga de documentos de verificación de identidad por parte de los analistas, vía la API. |
-| 5 | Cualquier origen | `centinela-snet-data-dev` | * | * | **DENEGADO explícitamente.** Ningún origen distinto a la subred de aplicación puede alcanzar la capa de datos. Esta es la regla que se demuestra en la prueba de aislamiento. |
-| 6 | Internet | `centinela-snet-data-dev` | * | * | **DENEGADO explícitamente.** Redundante con la regla 5, pero se deja explícita porque es el requerimiento no negociable del brief. |
-
-> Las reglas 5 y 6 no son "ausencia de regla" — se documentan como reglas de denegación explícita dentro del NSG, para que quede evidencia de la decisión y no de un olvido.
+Los nombres y rangos de red usados en esta guía coinciden con los valores definidos en [infra/scripts/variables.sh](../infra/scripts/variables.sh) y con el aprovisionamiento ejecutado por [infra/scripts/provision.sh](../infra/scripts/provision.sh).
 
 ---
 
-## 5. Mecanismo de aislamiento de la capa de datos
+## 5. Reglas de tráfico (deny-by-default)
+
+Regla general: **todo el tráfico se deniega por defecto**; solo se permite explícitamente lo que una operación concreta del sistema requiere. Para lograr esto de manera efectiva, se asocia un Grupo de Seguridad de Red (NSG) a cada una de las subredes operativas.
+
+### 5.1 NSG de la Subred de Aplicación (`centinela-nsg-app-dev`)
+
+Este NSG protege la subred donde reside la API de ingesta (App Service).
+
+#### Reglas de Entrada (Inbound Security Rules)
+
+| Prioridad | Nombre de Regla | Origen | Puerto Origen | Destino | Puerto Destino | Protocolo | Acción | Justificación Operativa |
+|---|---|---|---|---|---|---|---|---|
+| 100 | `Allow-HTTPS-Inbound` | `Internet` | `*` | `VirtualNetwork` | `443` | `TCP` | **Allow** | Permite que la API de ingesta reciba transacciones de los clientes y comercios. Único punto de entrada público del sistema. |
+| 65500 | `Deny-All-Inbound` | `*` | `*` | `*` | `*` | `*` | **Deny** | Denegación explícita por defecto para cualquier otro tráfico entrante. |
+
+#### Reglas de Salida (Outbound Security Rules)
+
+| Prioridad | Nombre de Regla | Origen | Puerto Origen | Destino | Puerto Destino | Protocolo | Acción | Justificación Operativa |
+|---|---|---|---|---|---|---|---|---|
+| 100 | `Allow-AAD-Outbound` | `*` | `*` | `AzureActiveDirectory` (Service Tag) | `443` | `TCP` | **Allow** | Requerido para que la API obtenga tokens de Microsoft Entra ID para la Managed Identity. |
+| 110 | `Allow-Storage-Outbound` | `*` | `*` | `Storage` (Service Tag) | `443` | `TCP` | **Allow** | Permite que la API acceda a las colas y blobs del Storage Account. |
+| 120 | `Allow-CosmosDB-Outbound` | `*` | `*` | `AzureCosmosDB` (Service Tag) | `443`, `10250-10255` | `TCP` | **Allow** | Requerido para conectarse de manera segura a la base de datos documental (semana 2). |
+| 130 | `Allow-Monitor-Outbound` | `*` | `*` | `AzureMonitor` (Service Tag) | `443` | `TCP` | **Allow** | Permite enviar telemetría y logs a Application Insights / Log Analytics. |
+| 140 | `Allow-SQL-Outbound` | `*` | `*` | `Sql` (Service Tag) | `1433` | `TCP` | **Allow** | Habilita la comunicación segura con el servidor Azure SQL Database para el almacenamiento de casos. |
+| 65500 | `Deny-All-Outbound` | `*` | `*` | `*` | `*` | `*` | **Deny** | Denegación explícita por defecto. Bloquea cualquier otra conexión saliente no aprobada (evita exfiltración de datos). |
+
+---
+
+### 5.2 NSG de la Subred de Datos (`centinela-nsg-data-dev`)
+
+Este NSG aísla por completo la capa de datos (Storage Account, Cosmos DB) de accesos no autorizados.
+
+#### Reglas de Entrada (Inbound Security Rules)
+
+| Prioridad | Nombre de Regla | Origen | Puerto Origen | Destino | Puerto Destino | Protocolo | Acción | Justificación Operativa |
+|---|---|---|---|---|---|---|---|---|
+| 100 | `Allow-App-Subnet-Inbound` | `10.0.1.0/24` (Subred App) | `*` | `10.0.2.0/24` (Subred Datos) | `443`, `10250-10255` | `TCP` | **Allow** | Permite que únicamente la API de ingesta pueda realizar consultas y escrituras en Cosmos DB y Storage. |
+| 65500 | `Deny-All-Inbound` | `*` | `*` | `*` | `*` | `*` | **Deny** | **DENEGADO explícitamente.** Ningún origen distinto a la subred de aplicación puede alcanzar la capa de datos (incluyendo Internet). Cumple con el requerimiento no negociable del brief. |
+
+#### Reglas de Salida (Outbound Security Rules)
+
+| Prioridad | Nombre de Regla | Origen | Puerto Origen | Destino | Puerto Destino | Protocolo | Acción | Justificación Operativa |
+|---|---|---|---|---|---|---|---|---|
+| 65500 | `Deny-All-Outbound` | `*` | `*` | `*` | `*` | `*` | **Deny** | Los recursos en la subred de datos nunca inician tráfico saliente; solo responden a peticiones entrantes autorizadas. |
+
+---
+
+## 6. Mecanismo de aislamiento de la capa de datos
 
 El brief pide usar **el mecanismo de restricción de acceso por subred que ofrece la plataforma sin costo adicional**. Esto corresponde a **Service Endpoints** (no Private Endpoints, que tienen costo adicional por hora + procesamiento de datos).
 
 | Mecanismo | Costo | Cómo funciona | Cuándo se usaría el otro |
 |---|---|---|---|
-| **Service Endpoint** (elegido) | Gratis | Extiende la identidad de la subred hacia el servicio de Azure (Storage, Cosmos DB); el tráfico sigue viajando por la red pública de Azure (backbone), pero el recurso solo acepta conexiones desde las subredes autorizadas. | — |
+| **Service Endpoint** (elegido) | Gratis | Extiende la identidad de la subred hacia el servicio de Azure (Storage, Cosmos DB, SQL Database); el tráfico sigue viajando por la red pública de Azure (backbone), pero el recurso solo acepta conexiones desde las subredes autorizadas. | — |
 | **Private Endpoint** (alternativa de pago) | Costo por hora + por GB procesado | Crea una interfaz de red privada dentro de la VNet con una IP privada propia para el recurso; el tráfico nunca sale a la red pública de Azure. Aísla también a nivel de DNS. | Si en semana 3 el presupuesto lo permite y se requiere aislamiento total (ni siquiera por el backbone de Azure), o si hay requisitos de cumplimiento más estrictos. |
 
-**Diferencia clave para el equipo:** con Service Endpoints, el recurso (ej. Storage Account) sigue teniendo una IP pública, pero su firewall solo acepta tráfico proveniente de las subredes marcadas como confiables. Con Private Endpoint, el recurso deja de tener IP pública alcanzable y pasa a vivir "dentro" de la VNet. Para este proyecto, con presupuesto de 21 días y <20 USD/semana, Service Endpoints cumple el requerimiento del brief sin costo.
+**Diferencia clave para el equipo:** con Service Endpoints, los recursos (ej. Storage Account, SQL Server) siguen teniendo una IP pública, pero su firewall/reglas de VNet solo aceptan tráfico proveniente de las subredes marcadas como confiables. Con Private Endpoint, el recurso deja de tener IP pública alcanzable y pasa a vivir "dentro" de la VNet. Para este proyecto, con presupuesto de 21 días y <20 USD/semana, Service Endpoints cumple el requerimiento del brief sin costo.
 
 ---
 
-## 6. Prueba de aislamiento (a ejecutar en la validación de cierre)
+## 7. Prueba de aislamiento (a ejecutar en la validación de cierre)
 
 Pasos que Dani/Maribel deben ejecutar y documentar como evidencia:
 
@@ -86,7 +113,7 @@ Pasos que Dani/Maribel deben ejecutar y documentar como evidencia:
 
 ---
 
-## 7. Diagrama de red (descripción para el diagrama visual)
+## 8. Diagrama de red (descripción para el diagrama visual)
 
 ```
 Internet
@@ -107,6 +134,7 @@ Internet
 │  │ snet-data (10.0.2.0/24)        │     │
 │  │  → Cosmos DB (semana 2)        │     │
 │  │  → Storage Account (Blob)      │     │
+│  │  → SQL Database (Casos)        │     │
 │  │  🚫 Sin acceso desde Internet   │     │
 │  └────────────────────────────────┘     │
 │                                          │
@@ -119,7 +147,7 @@ Internet
 
 ---
 
-## 8. Pendiente de confirmación
+## 9. Pendiente de confirmación
 
 - [ ] Validar con Dani que el App Service Plan elegido (nivel mínimo con VNet Integration) es compatible con Service Endpoints hacia Storage/Cosmos DB.
-- [ ] Ejecutar y documentar la prueba de aislamiento (sección 6) antes de dar la semana por cerrada.
+- [ ] Ejecutar y documentar la prueba de aislamiento (sección 7) antes de dar la semana por cerrada.

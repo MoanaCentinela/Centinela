@@ -1,0 +1,4 @@
+export interface AppLogger {
+  info(message: string, meta?: Record<string, unknown>): void;
+  error(message: string, meta?: Record<string, unknown>): void;
+}
