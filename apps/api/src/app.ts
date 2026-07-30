@@ -1,4 +1,8 @@
 import Fastify from "fastify";
+import fastifyStatic from "@fastify/static";
+import path from "node:path";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import rateLimit from "@fastify/rate-limit";
 import { transactionRoutes } from "./modules/ingestion/controllers/transaction.routes.js";
 import { caseRoutes } from "./modules/cases/controllers/case.routes.js";
@@ -106,6 +110,40 @@ export async function buildApp(options: {
   await app.register(configRoutes, { runtimeConfig, tokenService });
   await app.register(merchantRoutes, { repository: riskMerchantRepository, tokenService });
   await app.register(userRoutes, { repository: userRepository, passwordHasher, tokenService });
+
+  const currentFilename = fileURLToPath(import.meta.url);
+  const currentDirname = path.dirname(currentFilename);
+  const candidateWebPaths = [
+    path.resolve(currentDirname, "../../web/dist"),
+    path.resolve(currentDirname, "../public"),
+    path.resolve(process.cwd(), "public"),
+    path.resolve(process.cwd(), "../web/dist"),
+    path.resolve(process.cwd(), "apps/web/dist"),
+  ];
+
+  const webDistPath = candidateWebPaths.find((p) => fs.existsSync(p));
+
+  if (webDistPath) {
+    await app.register(fastifyStatic, {
+      root: webDistPath,
+      prefix: "/",
+      wildcard: false,
+    });
+
+    app.setNotFoundHandler((request, reply) => {
+      const url = request.raw.url || "";
+      const isApiRoute =
+        url.startsWith("/transactions") ||
+        url.startsWith("/cases") ||
+        url.startsWith("/auth") ||
+        url.startsWith("/admin");
+
+      if (!isApiRoute) {
+        return reply.sendFile("index.html");
+      }
+      return reply.status(404).send(ApiResponse.error(`Ruta no encontrada: ${url}`));
+    });
+  }
 
   // Exponer el repositorio de casos en la instancia para inspección en pruebas/consultas
   (app as any).caseRepository = caseRepository;

@@ -30,14 +30,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build API
-        run: pnpm --filter api build
+      - name: Build API and Web Frontend
+        run: |
+          pnpm --filter api build
+          pnpm --filter web build
 
       - name: Create Production Bundle
         run: |
           mkdir -p deploy-pkg
           cp apps/api/package.json deploy-pkg/
           cp -r apps/api/dist deploy-pkg/dist
+          mkdir -p deploy-pkg/apps/web
+          cp -r apps/web/dist deploy-pkg/apps/web/dist
           cd deploy-pkg && npm install --omit=dev --legacy-peer-deps && rm -f oryx-manifest.toml node_modules.tar.gz && zip -r ../release.zip . && cd ..
 
       - name: Login to Azure
