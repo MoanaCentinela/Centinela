@@ -19,7 +19,7 @@ Esta guía describe la topología base aprovisionada por los scripts actuales y 
 | Subred | Nombre | Rango (CIDR) | IPs utilizables | Componentes | Semana |
 |---|---|---|---|---|---|
 | Aplicación | `centinela-snet-app-dev` | `10.0.1.0/24` | ~251 | App Service (API de ingesta) vía VNet Integration | 1 |
-| Datos | `centinela-snet-data-dev` | `10.0.2.0/24` | ~251 | Cosmos DB (Private Endpoint), Storage Account (Private Endpoint) | 2 |
+| Datos | `centinela-snet-data-dev` | `10.0.2.0/24` | ~251 | Cosmos DB (Service Endpoint), Storage Account (Service Endpoint), SQL Database (VNet Rule) | 2 |
 | Futuro / IA | `centinela-snet-future-dev` | `10.0.3.0/24` | ~251 | Servicios de IA, Service Bus si se reemplaza la cola simple, componentes de semana 3 | 3 |
 
 ---
@@ -66,6 +66,7 @@ Este NSG protege la subred donde reside la API de ingesta (App Service).
 | 110 | `Allow-Storage-Outbound` | `*` | `*` | `Storage` (Service Tag) | `443` | `TCP` | **Allow** | Permite que la API acceda a las colas y blobs del Storage Account. |
 | 120 | `Allow-CosmosDB-Outbound` | `*` | `*` | `AzureCosmosDB` (Service Tag) | `443`, `10250-10255` | `TCP` | **Allow** | Requerido para conectarse de manera segura a la base de datos documental (semana 2). |
 | 130 | `Allow-Monitor-Outbound` | `*` | `*` | `AzureMonitor` (Service Tag) | `443` | `TCP` | **Allow** | Permite enviar telemetría y logs a Application Insights / Log Analytics. |
+| 140 | `Allow-SQL-Outbound` | `*` | `*` | `Sql` (Service Tag) | `1433` | `TCP` | **Allow** | Habilita la comunicación segura con el servidor Azure SQL Database para el almacenamiento de casos. |
 | 65500 | `Deny-All-Outbound` | `*` | `*` | `*` | `*` | `*` | **Deny** | Denegación explícita por defecto. Bloquea cualquier otra conexión saliente no aprobada (evita exfiltración de datos). |
 
 ---
@@ -95,10 +96,10 @@ El brief pide usar **el mecanismo de restricción de acceso por subred que ofrec
 
 | Mecanismo | Costo | Cómo funciona | Cuándo se usaría el otro |
 |---|---|---|---|
-| **Service Endpoint** (elegido) | Gratis | Extiende la identidad de la subred hacia el servicio de Azure (Storage, Cosmos DB); el tráfico sigue viajando por la red pública de Azure (backbone), pero el recurso solo acepta conexiones desde las subredes autorizadas. | — |
+| **Service Endpoint** (elegido) | Gratis | Extiende la identidad de la subred hacia el servicio de Azure (Storage, Cosmos DB, SQL Database); el tráfico sigue viajando por la red pública de Azure (backbone), pero el recurso solo acepta conexiones desde las subredes autorizadas. | — |
 | **Private Endpoint** (alternativa de pago) | Costo por hora + por GB procesado | Crea una interfaz de red privada dentro de la VNet con una IP privada propia para el recurso; el tráfico nunca sale a la red pública de Azure. Aísla también a nivel de DNS. | Si en semana 3 el presupuesto lo permite y se requiere aislamiento total (ni siquiera por el backbone de Azure), o si hay requisitos de cumplimiento más estrictos. |
 
-**Diferencia clave para el equipo:** con Service Endpoints, el recurso (ej. Storage Account) sigue teniendo una IP pública, pero su firewall solo acepta tráfico proveniente de las subredes marcadas como confiables. Con Private Endpoint, el recurso deja de tener IP pública alcanzable y pasa a vivir "dentro" de la VNet. Para este proyecto, con presupuesto de 21 días y <20 USD/semana, Service Endpoints cumple el requerimiento del brief sin costo.
+**Diferencia clave para el equipo:** con Service Endpoints, los recursos (ej. Storage Account, SQL Server) siguen teniendo una IP pública, pero su firewall/reglas de VNet solo aceptan tráfico proveniente de las subredes marcadas como confiables. Con Private Endpoint, el recurso deja de tener IP pública alcanzable y pasa a vivir "dentro" de la VNet. Para este proyecto, con presupuesto de 21 días y <20 USD/semana, Service Endpoints cumple el requerimiento del brief sin costo.
 
 ---
 
@@ -133,6 +134,7 @@ Internet
 │  │ snet-data (10.0.2.0/24)        │     │
 │  │  → Cosmos DB (semana 2)        │     │
 │  │  → Storage Account (Blob)      │     │
+│  │  → SQL Database (Casos)        │     │
 │  │  🚫 Sin acceso desde Internet   │     │
 │  └────────────────────────────────┘     │
 │                                          │

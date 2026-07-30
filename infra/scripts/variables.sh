@@ -44,6 +44,19 @@ BLOB_CONTAINER="${BLOB_CONTAINER:-raw-data}"
 QUEUE_NAME="${QUEUE_NAME:-cola-transacciones}"
 
 ####################################################
+# BASE DE DATOS SQL (ALMACÉN DE CASOS)
+####################################################
+
+# SQL_SERVER_NAME: Nombre del servidor SQL lógico (debe ser único en todo Azure)
+SQL_SERVER_NAME="${SQL_SERVER_NAME:-sql-centinela-dev-001}"
+# SQL_DB_NAME: Nombre de la base de datos relacional para el almacén de casos de fraude
+SQL_DB_NAME="${SQL_DB_NAME:-CasosFraudeDB}"
+# SQL_ADMIN_USER: Usuario administrador para la base de datos SQL
+SQL_ADMIN_USER="${SQL_ADMIN_USER:-admincentinela}"
+# SQL_ADMIN_PASSWORD: Contraseña para el usuario administrador de la base de datos SQL
+SQL_ADMIN_PASSWORD="${SQL_ADMIN_PASSWORD:-PasswordSeguro123!}"
+
+####################################################
 # MONITOREO
 ####################################################
 

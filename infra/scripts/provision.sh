@@ -242,6 +242,21 @@ else
         --destination-address-prefixes AzureMonitor \
         --destination-port-ranges 443 >/dev/null
 
+    # Salida: Permitir conexión a Azure SQL Database (Almacén de Casos)
+    # Habilita la comunicación con la base de datos relacional para guardar casos de fraude.
+    az network nsg rule create \
+        --resource-group $RESOURCE_GROUP \
+        --nsg-name $APP_NSG \
+        --name Allow-SQL-Outbound \
+        --priority 140 \
+        --direction Outbound \
+        --access Allow \
+        --protocol Tcp \
+        --source-address-prefixes "*" \
+        --source-port-ranges "*" \
+        --destination-address-prefixes Sql \
+        --destination-port-ranges 1433 >/dev/null
+
     # Salida: Denegar todo por defecto
     # Evita que el código de la API realice descargas externas o exfiltre información no controlada.
     az network nsg rule create \
@@ -427,7 +442,7 @@ az network vnet subnet update \
     --resource-group "$RESOURCE_GROUP" \
     --vnet-name "$VNET_NAME" \
     --name "$APP_SUBNET" \
-    --service-endpoints Microsoft.Storage >/dev/null
+    --service-endpoints Microsoft.Storage Microsoft.Sql >/dev/null
 
 echo "Configurando firewall del Storage Account..."
 
@@ -669,10 +684,7 @@ fi
 ############################################################
 
 echo ""
-echo "Verificando Servidor SQL..."
-
-SQL_SERVER_NAME="sql-centinela-dev-001"
-SQL_DB_NAME="CasosFraudeDB"
+echo "Verificando Servidor SQL ($SQL_SERVER_NAME)..."
 
 if az sql server show --name "$SQL_SERVER_NAME" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1
 then
@@ -683,8 +695,8 @@ else
         --name "$SQL_SERVER_NAME" \
         --resource-group "$RESOURCE_GROUP" \
         --location "$LOCATION" \
-        --admin-user "admincentinela" \
-        --admin-password "PasswordSeguro123!"
+        --admin-user "$SQL_ADMIN_USER" \
+        --admin-password "$SQL_ADMIN_PASSWORD"
 
     echo "Creando Base de Datos SQL..."
     az sql db create \
@@ -692,11 +704,33 @@ else
         --server "$SQL_SERVER_NAME" \
         --name "$SQL_DB_NAME" \
         --service-objective Basic
-
-    echo "Bloqueando acceso a internet para el Servidor SQL..."
-    az sql server update \
-        --name "$SQL_SERVER_NAME" \
-        --resource-group "$RESOURCE_GROUP" \
-        --restrict-outbound-network-access true \
-        --public-network-access Disabled
 fi
+
+echo "Configurando aislamiento de red para el Servidor SQL..."
+
+# AISLAMIENTO DE RED PARA EL ALMACÉN DE CASOS (SQL)
+#
+# Para implementar la topología segura restrictiva de la plataforma:
+# 1. Habilitamos public-network-access en 'Enabled' a nivel lógico del servidor SQL.
+#    IMPORTANTE: Esto es obligatorio para que Azure SQL pueda evaluar las reglas de red virtual
+#    (VNet Rules / Service Endpoints). Si se establece en 'Disabled', solo se admiten conexiones 
+#    mediante Private Endpoints (los cuales tienen costos adicionales no deseados para este proyecto).
+# 2. Al no definir ninguna regla de firewall de IP pública (rango 0.0.0.0 a 255.255.255.255),
+#    todo el acceso desde internet pública queda DENEGADO por defecto (firewall implícito).
+# 3. Restringimos el tráfico saliente desde el propio servidor SQL mediante 'restrict-outbound-network-access'.
+az sql server update \
+    --name "$SQL_SERVER_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --restrict-outbound-network-access true \
+    --public-network-access Enabled >/dev/null
+
+# 4. Creamos una regla de red virtual (VNet Rule) que vincula el servidor SQL con la subred de aplicación.
+#    Esto permite que las peticiones originadas desde la API de ingesta (dentro de la VNet)
+#    sean validadas e ingresen de forma segura.
+echo "Asociando regla de red de la subred de aplicación al Servidor SQL..."
+az sql server vnet-rule create \
+    --resource-group "$RESOURCE_GROUP" \
+    --server "$SQL_SERVER_NAME" \
+    --name "Allow-AppSubnet-Inbound" \
+    --vnet-name "$VNET_NAME" \
+    --subnet "$APP_SUBNET" >/dev/null 2>&1 || true
