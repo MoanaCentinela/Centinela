@@ -13,12 +13,9 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: apps/api
-
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -33,8 +30,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build
-        run: pnpm build
+      - name: Build API
+        run: pnpm --filter api build
+
+      - name: Create Production Bundle
+        run: |
+          mkdir -p deploy-pkg
+          cp apps/api/package.json deploy-pkg/
+          cp -r apps/api/dist deploy-pkg/dist
+          cd deploy-pkg && npm install --omit=dev --legacy-peer-deps && zip -r ../release.zip . && cd ..
 
       - name: Login to Azure
         uses: azure/login@v2
@@ -43,8 +47,15 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Configure App Service Settings
+        run: |
+          az webapp config appsettings set \
+            --resource-group rg-centinela-dev \
+            --name centinela-api-dev \
+            --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false
+
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: centinela-api-dev
-          package: apps/api
+          package: release.zip
