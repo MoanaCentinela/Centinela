@@ -38,7 +38,7 @@ jobs:
           mkdir -p deploy-pkg
           cp apps/api/package.json deploy-pkg/
           cp -r apps/api/dist deploy-pkg/dist
-          cd deploy-pkg && npm install --omit=dev --legacy-peer-deps && zip -r ../release.zip . && cd ..
+          cd deploy-pkg && npm install --omit=dev --legacy-peer-deps && rm -f oryx-manifest.toml node_modules.tar.gz && zip -r ../release.zip . && cd ..
 
       - name: Login to Azure
         uses: azure/login@v2
@@ -52,7 +52,7 @@ jobs:
           az webapp config appsettings set \
             --resource-group rg-centinela-dev \
             --name centinela-api-dev \
-            --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false
+            --settings SCM_DO_BUILD_DURING_DEPLOYMENT="false" ENABLE_ORYX_BUILD="false"
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
