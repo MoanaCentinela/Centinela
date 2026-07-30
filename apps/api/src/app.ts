@@ -18,6 +18,16 @@ import { ImpossibleGeoRule } from "./modules/scoring/rules/ImpossibleGeoRule.js"
 import { RiskMerchantRule } from "./modules/scoring/rules/RiskMerchantRule.js";
 import { ScoringEngine } from "./modules/scoring/services/ScoringEngine.js";
 import { TransactionAcceptedConsumer } from "./modules/scoring/consumers/TransactionAcceptedConsumer.js";
+import { MemoryRuntimeConfig } from "./infrastructure/config/MemoryRuntimeConfig.js";
+import { MemoryRiskMerchantRepository } from "./infrastructure/merchants/MemoryRiskMerchantRepository.js";
+import { MemoryUserRepository } from "./infrastructure/auth/MemoryUserRepository.js";
+import { PasswordHasher } from "./modules/auth/services/PasswordHasher.js";
+import { TokenService } from "./modules/auth/services/TokenService.js";
+import { AuthService } from "./modules/auth/services/AuthService.js";
+import { authRoutes } from "./modules/auth/controllers/auth.routes.js";
+import { configRoutes } from "./modules/admin/controllers/config.routes.js";
+import { merchantRoutes } from "./modules/admin/controllers/merchant.routes.js";
+import { userRoutes } from "./modules/admin/controllers/user.routes.js";
 
 export async function buildApp(options: {
   eventPublisher?: InMemoryEventPublisher;
@@ -28,10 +38,17 @@ export async function buildApp(options: {
   });
 
   const configuration = new EnvironmentConfigurationProvider();
+  const runtimeConfig = new MemoryRuntimeConfig(configuration);
   const eventPublisher = options.eventPublisher ?? new InMemoryEventPublisher();
   const caseRepository = options.caseRepository ?? new MemoryCaseRepository();
   const historyProvider = new MemoryTransactionHistoryProvider();
   const repository = new MemoryTransactionRepository(historyProvider);
+  const riskMerchantRepository = new MemoryRiskMerchantRepository();
+
+  const passwordHasher = new PasswordHasher();
+  const userRepository = new MemoryUserRepository(passwordHasher);
+  const tokenService = new TokenService(String(configuration.get("TOKEN_SECRET") ?? "centinela-dev-secret"));
+  const authService = new AuthService(userRepository, passwordHasher, tokenService);
 
   const ruleEngine = new RuleEngine([
     new VelocityRule(3, 35),
@@ -44,7 +61,8 @@ export async function buildApp(options: {
     ruleEngine,
     historyProvider,
     caseRepository,
-    configuration,
+    configuration: runtimeConfig,
+    riskMerchantRepository,
   });
 
   const consumer = new TransactionAcceptedConsumer(scoringEngine, repository);
@@ -83,7 +101,11 @@ export async function buildApp(options: {
   });
 
   await app.register(transactionRoutes, { service: transactionService });
-  await app.register(caseRoutes, { service: caseService });
+  await app.register(caseRoutes, { service: caseService, tokenService });
+  await app.register(authRoutes, { service: authService, userRepository, tokenService });
+  await app.register(configRoutes, { runtimeConfig, tokenService });
+  await app.register(merchantRoutes, { repository: riskMerchantRepository, tokenService });
+  await app.register(userRoutes, { repository: userRepository, passwordHasher, tokenService });
 
   // Exponer el repositorio de casos en la instancia para inspección en pruebas/consultas
   (app as any).caseRepository = caseRepository;

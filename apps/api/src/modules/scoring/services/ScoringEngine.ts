@@ -3,6 +3,7 @@ import { TransactionHistoryProvider } from "../../../shared/ports/TransactionHis
 import { CaseRepository } from "../../../shared/ports/CaseRepository.js";
 import { CasePublisher } from "../../../shared/ports/CasePublisher.js";
 import { ConfigurationProvider } from "../../../shared/config/ConfigurationProvider.js";
+import { RiskMerchantRepository } from "../../../shared/ports/RiskMerchantRepository.js";
 import { TransactionRequest } from "../../../shared/contracts/index.js";
 import { FraudCase } from "../../../shared/models/FraudCase.js";
 import { RuleContext, FraudRuleResult } from "../../../shared/ports/FraudRule.js";
@@ -13,6 +14,7 @@ export interface ScoringEngineDependencies {
   caseRepository?: CaseRepository;
   casePublisher?: CasePublisher;
   configuration?: ConfigurationProvider;
+  riskMerchantRepository?: RiskMerchantRepository;
 }
 
 export interface ScoringResult {
@@ -32,6 +34,7 @@ export class ScoringEngine {
   private readonly caseRepository: CaseRepository;
   private readonly casePublisher?: CasePublisher;
   private readonly configuration: ConfigurationProvider;
+  private readonly riskMerchantRepository?: RiskMerchantRepository;
 
   constructor(dependencies: ScoringEngineDependencies) {
     this.ruleEngine = dependencies.ruleEngine ?? new RuleEngine();
@@ -48,15 +51,21 @@ export class ScoringEngine {
     };
     this.casePublisher = dependencies.casePublisher;
     this.configuration = dependencies.configuration ?? { get: () => undefined };
+    this.riskMerchantRepository = dependencies.riskMerchantRepository;
   }
 
   async evaluateTransaction(transaction: TransactionRequest): Promise<ScoringResult> {
     const recentTransactions = await this.historyProvider.getRecentTransactions(transaction.accountId);
     const accountHistoricalAverage = await this.historyProvider.getAccountHistoricalAverage(transaction.accountId);
 
+    const riskMerchants = await this.riskMerchantRepository?.getRiskMerchants();
+    const riskCategories = await this.riskMerchantRepository?.getRiskCategories();
+
     const context: RuleContext = {
       recentTransactions,
       accountHistoricalAverage,
+      riskMerchants,
+      riskCategories,
     };
 
     const ruleEvaluations = await this.ruleEngine.executeAll(transaction, context);
